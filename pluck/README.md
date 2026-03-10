@@ -1,6 +1,6 @@
 # Pluck
 
-[Official website](https://pluck-lang.github.io/) | [GitHub](https://github.com/mlb2251/Pluck.jl)
+[Official website](https://pluck-lang.github.io/) | [GitHub](https://github.com/mlb2251/Pluck.jl) | [Documentation](https://pluck-lang.github.io/docs)
 
 
 Pluck is a discrete probabilistic programming language with Lisp-like syntax, based on lazy knowledge compilation. It supports higher-order functions, recursive programs, and recursive types, and can perform exact and approximate inference.

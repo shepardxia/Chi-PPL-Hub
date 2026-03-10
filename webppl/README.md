@@ -1,6 +1,6 @@
 # WebPPL
 
-[Official website](http://webppl.org/) | [Documentation](https://webppl.readthedocs.io/en/master/) | [GitHub](https://github.com/orgs/probmods/repositories)
+[Official website](http://webppl.org/) | [GitHub](https://github.com/orgs/probmods/repositories) | [Documentation](https://webppl.readthedocs.io/en/master/)
 
 WebPPL (pronounced ‘web people’), is a small probabilistic programming language built on top of a (purely functional) subset of Javascript. 
 
