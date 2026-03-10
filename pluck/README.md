@@ -17,7 +17,7 @@ Pluck is a discrete probabilistic programming language with Lisp-like syntax, ba
 
 ## Known LLM issues
 
-- LLMs can confuse Pluck with Scheme, Church, or other Lisps.
+- ?
 
 ## Publications
 
