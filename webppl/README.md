@@ -14,7 +14,7 @@ WebPPL (pronounced ‘web people’), is a small probabilistic programming langu
 
 ## Existing PPL Code
 
-- [Forest](https://stuhlmueller.org/) — Repository for generative models in WebPPL
+- [Forest](https://forestdb.org/) — Repository for generative models in WebPPL
 - [probmods/webppl/examples](https://github.com/probmods/webppl/tree/master/examples) - Probmods examples
 - [stuhlmueller/neural-nets](https://github.com/stuhlmueller/neural-nets) — Neural nets in WebPPL
 - [agentmodels/webppl-agents](https://github.com/agentmodels/webppl-agents) - Library for modeling MDP and POMDP agents in WebPPL
