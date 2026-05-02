@@ -408,6 +408,98 @@ explicit question (covers ~11 atoms) or (b) making the comparator do
 fuzzy field-extraction from dict-shaped gen results — both deferred
 as out of scope for "fix the pipeline".
 
+## Round 5 — park non-seedable atoms, recover one image-only prompt
+
+User asked to park atoms that aren't seed-reproducible and try to
+recover any LLM-scoreable atoms whose *prompt* (not GT) is genuinely
+broken — without spoonfeeding the answer to the LLM.
+
+### Parked: 3 timing atoms
+
+GT-vs-self with the same `random_seed=42` returns different answers
+across runs for these 3 atoms because they use `_.now()` (wall-clock
+elapsed time) which is not under WebPPL's RNG control. Moved out of
+the active dataset into `data/parked_atoms.jsonl` with
+`parked_reason` annotated:
+
+- `probmods2-chapters-inference-algorithms/block-1`
+- `probmods2-chapters-inference-algorithms/block-2`
+- `probmods2-chapters-inference-algorithms/block-3`
+
+Audit run: 337/340 atoms across all 5 datasets are seed-reproducible
+(survey via `execute_webppl(..., random_seed=42)` twice and comparing
+canonical-JSON outputs).
+
+### Recovered: politeness/block-1 prompt
+
+`forestdb-2025-problang-politeness/block-1` had a 167 KB prompt that
+was 100% inline base64 image data. Round 4's `sanitize_prose` reduced
+it to a 275-byte prompt of just `[image]` because the retroactive
+sanitizer ran on the *final assembled prompt string*, never re-running
+`truncate_prose` over fresh prose paragraphs from the source.
+
+Added `scripts/rebuild_prompts.py` that re-extracts prose from source
+markdown and substitutes only the prose section of the prompt — the
+"given code" preamble stays as-is so we don't drift from the GT's
+actual execution context. Default policy: only rebuild prompts whose
+existing prose section (excluding `[image]` markers) is shorter than
+80 chars. Dry-run sweep found exactly 1 atom matching this criterion
+across all 4 new datasets — the politeness one. Recovered prose:
+
+> "Pragmatic speaker 1 (S1) is the same as the previous politeness
+> model we covered in class. The speaker considers their
+> *informational* (being truthful) and *social* (being kind) goals,
+> and *φ* determines which goal they prioritize. Running a speaker
+> who wants to convey state 1 and 0.5 *φ* returns the utterances
+> with the highest probabilities on..."
+
+That maps cleanly onto GT `speaker1(1, 0.5)`. Re-ran sonnet-4.6 on
+just this atom; gen now executes (was previously shape-mm because the
+LLM had nothing to go on). The two distributions still disagree
+(TV=1.0) — different parameterization on the LLM's side — but the
+atom now contributes a real verdict.
+
+### Investigated but not changed
+
+- **Prose mentions a function the LLM tries to use that isn't a
+  WebPPL builtin.** Three exec-fail atoms with `ReferenceError`:
+  `CRPmem` (chapters/non-parametric-models/block-11) — prose says
+  "WebPPL provides CRPmem" but our WebPPL distribution doesn't ship
+  it; GT defines its own `DPmem`. `Geometric` (inference-algorithms/
+  block-12) — the LLM hallucinated a builtin from prose's plain-
+  English mention of "geometric distribution"; not a prose bug.
+  `seatCustomer` — pure LLM hallucination. Only the CRPmem case is
+  genuinely a misleading prompt; left as-is for now (would require
+  editing the textbook prose, deferred).
+- **Display-string hoisting** (proposed in Round 4): only 9 atoms
+  (7 forestdb + 2 problang) have `display(...)` strings that aren't
+  already in the prompt. Hoisting these would border on spoonfeeding
+  (the display string is often the precise question the GT answers).
+  Skipped per user direction.
+
+### Scoreable count now
+
+```
+dataset    TV=0  <.05  <.5  <1  =1  val+  val-  shape!  fail   total  scoreable*
+exercises   43    9     9   7   2    4    2     0       0       76      76
+chapters     6    4    18  31  26    0    8    14      12      119      93
+dippl        2    1     1   5   6    2    3     3       1       24      20
+forestdb     6    0     6   6  19    0    1    18      11       67      38
+problang     2    0     1  10   5    0    3    24       6       51      21
+total                                                          337     248
+```
+
+\* "scoreable" = produced a graded numeric score (TV-binned or value
+match), excluding shape-mm and exec-fail.
+
+Three counts now make sense:
+
+- **340** total atoms (started here)
+- **337** seed-reproducible (parked 3 timing atoms)
+- **248** scoreable on this LLM run (can grade with a TV/value
+  metric; remainder hit shape-mismatch or exec-fail in this
+  particular run, but the atoms themselves are sound)
+
 ## Pending review (not yet changed)
 
 ### Sparse-support / continuous-joint posteriors
