@@ -1,0 +1,9 @@
+{
+  "name": "probmods-deps",
+  "version": "0.0.1",
+  "description": "Inlinable dependencies for probmods2 chapters",
+  "webppl": {
+    "headers": ["header.js"],
+    "wppl": ["globals.wppl"]
+  }
+}

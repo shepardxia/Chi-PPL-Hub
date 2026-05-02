@@ -1,0 +1,19 @@
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# generated outputs
+data/atoms*.html
+data/eval_runs/
+
+# scraped third-party sources (kept locally; treat as deps)
+data/sources/
+
+# claude code workspace
+.claude/
+
+# tmp
+*.tmp

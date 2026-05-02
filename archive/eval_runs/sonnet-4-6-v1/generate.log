@@ -1,0 +1,62 @@
+[1/52] probmods2/150-agents-as-programs: 7 blocks, warnings=0, in=31909, out=1741, 9.7s
+[2/52] probmods2/appendix-js-basics: 31 blocks, warnings=0, in=87315, out=1237, 10.2s
+[3/52] probmods2/appendix-useful-distributions: 5 blocks, warnings=0, in=5043, out=272, 4.1s
+[4/52] probmods2/bayesian-data-analysis: 9 blocks, warnings=0, in=42762, out=2389, 8.4s
+[5/52] probmods2/145-non-parametric-models: 19 blocks, warnings=0, in=193369, out=7590, 20.6s
+[6/52] probmods2/160-sequential-decisions: 13 blocks, warnings=0, in=110759, out=7557, 22.6s
+[7/52] probmods2/conditional-dependence: 15 blocks, warnings=1, in=87388, out=2560, 7.9s
+[8/52] probmods2/dependence: 8 blocks, warnings=6, in=8370, out=366, 5.7s
+[9/52] probmods2/bda-tow: 13 blocks, warnings=0, in=46873, out=4056, 14.9s
+[10/52] probmods2/conditioning: 21 blocks, warnings=16, in=42654, out=954, 16.0s
+[11/52] probmods2/function-learning: 7 blocks, warnings=5, in=5786, out=1171, 13.2s
+[12/52] probmods2/generative-models: 29 blocks, warnings=25, in=26711, out=190, 12.6s
+[13/52] probmods2/lot-learning: 4 blocks, warnings=4, in=0, out=0, 5.6s
+[14/52] probmods2/learning-as-conditional-inference: 17 blocks, warnings=14, in=20055, out=854, 8.3s
+[15/52] probmods2/hierarchical-models: 9 blocks, warnings=4, in=47375, out=2991, 21.2s
+[16/52] probmods2/inference-algorithms: 24 blocks, warnings=20, in=31786, out=1224, 15.7s
+[17/52] probmods2/mixture-models: 13 blocks, warnings=7, in=28989, out=2469, 11.7s
+[18/52] probmods2/occams-razor: 13 blocks, warnings=9, in=23674, out=1502, 13.6s
+[19/52] probmods2/old-observing-sequences: 16 blocks, warnings=11, in=18497, out=1500, 12.0s
+[20/52] probmods2/process-models: 1 blocks, warnings=0, in=1690, out=598, 12.1s
+[21/52] probmods2/social-cognition: 24 blocks, warnings=14, in=67528, out=3072, 14.2s
+[22/52] probmods2-exercises/05-observing-sequences: 8 blocks, warnings=2, in=13610, out=2916, 12.7s
+[23/52] probmods2-exercises/04.1-agents-as-programs: 9 blocks, warnings=5, in=7166, out=1163, 14.2s
+[24/52] probmods2-exercises/05.1-sequential-decisions: 3 blocks, warnings=1, in=1964, out=1415, 12.1s
+[25/52] probmods2-exercises/appendix-js-basics: 17 blocks, warnings=0, in=41217, out=1177, 9.5s
+[26/52] probmods2-exercises/conditional-dependence: 9 blocks, warnings=0, in=14835, out=3452, 9.9s
+[27/52] probmods2-exercises/dependence: 6 blocks, warnings=0, in=3603, out=350, 5.1s
+[28/52] probmods2-exercises/conditioning: 14 blocks, warnings=5, in=28078, out=2249, 11.9s
+[29/52] probmods2-exercises/bayesian-data-analysis: 9 blocks, warnings=1, in=25323, out=2227, 19.3s
+[30/52] probmods2-exercises/inference-algorithms: 11 blocks, warnings=5, in=15440, out=1238, 8.8s
+[31/52] probmods2-exercises/generative-models: 23 blocks, warnings=5, in=43654, out=3207, 15.3s
+[32/52] probmods2-exercises/hierarchical-models: 8 blocks, warnings=3, in=16953, out=2682, 15.2s
+[33/52] probmods2-exercises/learning-as-conditional-inference: 8 blocks, warnings=0, in=16017, out=2649, 9.3s
+[34/52] probmods2-exercises/lot-learning: 1 blocks, warnings=0, in=697, out=427, 6.7s
+[35/52] probmods2-exercises/mixture-models: 3 blocks, warnings=0, in=5069, out=1366, 9.0s
+[36/52] probmods2-exercises/social-cognition: 7 blocks, warnings=0, in=18020, out=2831, 11.2s
+[37/52] probmods2-teaching-extras/CausalAbstraction: 1 blocks, warnings=0, in=388, out=274, 5.2s
+[38/52] probmods2-exercises/occams-razor: 6 blocks, warnings=0, in=23142, out=5052, 19.1s
+[39/52] probmods2-exercises/process-models: 5 blocks, warnings=0, in=6118, out=5071, 20.6s
+[40/52] probmods2-teaching-extras/GenerativeLeaves: 2 blocks, warnings=0, in=1672, out=125, 3.5s
+[41/52] probmods2-teaching-extras/BayesianSpelkeObjects: 2 blocks, warnings=0, in=2434, out=2033, 17.8s
+[42/52] probmods2-teaching-extras/ExtendedTugOfWar_v2: 3 blocks, warnings=0, in=3480, out=1208, 7.8s
+[43/52] probmods2-teaching-extras/ExtendedTugOfWar: 3 blocks, warnings=0, in=3621, out=2159, 14.6s
+[44/52] probmods2-teaching-extras/NestedInferAlgorithms: 3 blocks, warnings=0, in=3653, out=1076, 10.3s
+[45/52] probmods2-teaching-extras/LearningProcess: 4 blocks, warnings=0, in=5825, out=1375, 11.6s
+[46/52] probmods2-teaching-extras/RSA-Mimplicature: 2 blocks, warnings=0, in=3078, out=1394, 13.1s
+[47/52] probmods2-teaching-extras/RSA-conventions: 1 blocks, warnings=0, in=945, out=898, 13.4s
+[48/52] probmods2-teaching-extras/RSA-incremental: 4 blocks, warnings=0, in=7117, out=2767, 12.8s
+[49/52] probmods2-teaching-extras/RSA-meaning: 3 blocks, warnings=0, in=6033, out=2015, 15.2s
+[50/52] probmods2-teaching-extras/RSA-relevance: 1 blocks, warnings=0, in=1252, out=726, 11.8s
+[51/52] probmods2-teaching-extras/ResourceRational: 3 blocks, warnings=0, in=3400, out=1717, 11.9s
+[52/52] probmods2-teaching-extras/ToE: 7 blocks, warnings=0, in=16151, out=3312, 15.0s
+
+============================================================
+GENERATION DONE
+============================================================
+  Adapter:       anthropic:claude-sonnet-4-6
+  Prompt ver:    v1
+  Entries:       52
+  Wall clock:    165.9s
+  Input tokens:  1,268,488
+  Output tokens: 104,844

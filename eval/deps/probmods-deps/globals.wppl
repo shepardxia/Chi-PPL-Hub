@@ -1,0 +1,18 @@
+// Auto-generated: probmods2 chapter dependencies
+// Source: data/sources/probmods2/assets/js/
+
+// --- euclideanDistance ---
+var euclideanDistance = function(v1, v2) {
+  var diffs = map2(function(a, b) { return (a - b) * (a - b) }, v1, v2)
+  return Math.sqrt(sum(diffs))
+}
+
+// MCMC_Callbacks, worldWidth, physics are provided via header.js
+// (must be plain JS, not CPS-transformed)
+
+// --- Draw (canvas rendering noop) ---
+var Draw = function(w, h, show) {
+  var noop = function() { return undefined }
+  return { rectangle: noop, circle: noop, line: noop, point: noop,
+           text: noop, image: noop, loadImage: noop, finished: noop }
+}

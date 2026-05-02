@@ -1,0 +1,7 @@
+{
+  "name": "probmods-draw",
+  "version": "0.0.1",
+  "webppl": {
+    "headers": ["header.js"]
+  }
+}
