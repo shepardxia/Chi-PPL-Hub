@@ -1,0 +1,342 @@
+"""Extract atoms from prose-with-code WebPPL sources.
+
+Works for any markdown source where each "atom candidate" is a code
+fence preceded by prose: probmods2 chapters, DIPPL chapters, ProbLang
+chapters, ForestDB models. The extractor:
+
+  1. Walks each .md file, splits into (preceding_prose, code_block) pairs.
+  2. Wraps each code block so its last expression is bound to ANSWER.
+  3. Runs it. If it produces a Distribution / value, emits an atom.
+  4. Otherwise skips with a reason logged.
+
+Pedagogical sources (chapters, models) won't all atomize cleanly.
+Iterate per source.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from eval.executor import execute_webppl
+from eval.io import write_jsonl
+
+
+CODE_FENCE = re.compile(r"^~~~~?\s*$|^```\s*(?:js|webppl|norun)?\s*$", re.MULTILINE)
+
+
+# Per-source extraction config.
+SOURCES = {
+    "probmods_chapters": {
+        "dir": "data/sources/probmods2/chapters",
+        "id_prefix": "probmods2-chapters",
+        "label": "probmods2 chapter",
+    },
+    "dippl": {
+        "dir": "data/sources/dippl/chapters",
+        "id_prefix": "dippl",
+        "label": "DIPPL chapter",
+    },
+    "problang": {
+        "dir": "data/sources/problang/chapters",
+        "id_prefix": "problang",
+        "label": "ProbLang chapter",
+    },
+    "forestdb": {
+        "dir": "data/sources/forestdb.org/models",
+        "id_prefix": "forestdb",
+        "label": "ForestDB model",
+    },
+}
+
+
+def split_blocks(text: str):
+    """Yield (preceding_prose, code) pairs from a chapter markdown.
+
+    Detects ~~~~ / ~~~ / ``` fences. Skips fences flagged `norun`.
+    """
+    lines = text.split("\n")
+    in_fence = False
+    fence_buf: list[str] = []
+    prose_buf: list[str] = []
+    skip_block = False
+    for ln in lines:
+        stripped = ln.strip()
+        is_fence = (
+            stripped.startswith("~~~~") or stripped.startswith("~~~")
+            or stripped.startswith("```")
+        )
+        if is_fence:
+            if not in_fence:
+                in_fence = True
+                fence_buf = []
+                skip_block = "norun" in stripped.lower()
+            else:
+                in_fence = False
+                if not skip_block and fence_buf:
+                    prose = "\n".join(prose_buf).strip()
+                    code = "\n".join(fence_buf)
+                    yield prose, code
+                # Reset prose accumulator AFTER yielding so prior prose
+                # isn't reused for the next block (it's already attached).
+                prose_buf = []
+                fence_buf = []
+                skip_block = False
+            continue
+        if in_fence:
+            fence_buf.append(ln)
+        else:
+            prose_buf.append(ln)
+
+
+def looks_like_full_program(code: str) -> bool:
+    """Cheap filter: program should have either Infer or a clear expression
+    that returns something interesting (not just a fragment)."""
+    s = code.strip()
+    if not s:
+        return False
+    # Must contain something that produces an answer-like value
+    has_infer = "Infer(" in s or "viz(" in s or "viz." in s
+    has_print = "print(" in s
+    has_repeat = "repeat(" in s
+    return has_infer or has_print or has_repeat
+
+
+def strip_viz_print(code: str) -> str:
+    """Remove final viz/print wrappers so we can rebind to ANSWER."""
+    s = code.rstrip()
+    if s.endswith(";"):
+        s = s[:-1].rstrip()
+    # Common patterns: `viz(X)` `viz.table(X)` `print(X)`
+    m = re.match(r"^(.*?)(viz(?:\.[a-zA-Z]+)?\s*\(\s*)(.+)\)\s*$", s, re.DOTALL)
+    if m:
+        prefix, _wrapper, inner = m.groups()
+        return prefix + inner
+    m = re.match(r"^(.*?)print\s*\(\s*(.+)\)\s*$", s, re.DOTALL)
+    if m:
+        prefix, inner = m.groups()
+        return prefix + inner
+    return s
+
+
+def find_last_expression(code: str) -> tuple[str, str]:
+    """Best-effort split: everything except the last top-level expression
+    goes in 'before'; the last expression goes in 'last'.
+
+    For chapter blocks the last statement is usually a viz/print or a
+    bare expression (Infer call, repeat call, etc.).
+    """
+    code = code.rstrip()
+    if code.endswith(";"):
+        code = code[:-1].rstrip()
+    # Find last top-level boundary (semicolon or `}` followed by newline)
+    depth = 0
+    in_str = False
+    sc = None
+    last = 0
+    i = 0
+    n = len(code)
+    while i < n:
+        c = code[i]
+        if in_str:
+            if c == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if c == sc:
+                in_str = False
+            i += 1
+            continue
+        if c in '"\'':
+            in_str = True
+            sc = c
+        elif c in "{[(":
+            depth += 1
+        elif c in "}])":
+            depth -= 1
+            if depth == 0 and c in ")}]":
+                # ASI-ish: treat as boundary if followed by newline + statement-start
+                j = i + 1
+                while j < n and code[j] in " \t\r":
+                    j += 1
+                if j < n and code[j] == "\n":
+                    while j < n and code[j] in " \t\r\n":
+                        j += 1
+                    if j < n and code[j] not in ".[(,?:":
+                        last = i + 1
+        elif c == ";" and depth == 0:
+            last = i + 1
+        i += 1
+    if last == 0:
+        return "", code.strip()
+    return code[:last].rstrip(), code[last:].strip()
+
+
+def wrap_with_answer(code: str) -> str | None:
+    """Return code with `var ANSWER = (last_expr);` appended.
+
+    Returns None if we couldn't identify a sensible last expression.
+    """
+    cleaned = strip_viz_print(code)
+    before, last = find_last_expression(cleaned)
+    if not last:
+        return None
+    return f"{before}\nvar ANSWER = ({last});\n" if before else f"var ANSWER = ({last});\n"
+
+
+def classify_answer(answer) -> tuple[str, object]:
+    """Return (answer_shape, eval_mode) by inspecting the executed answer."""
+    if isinstance(answer, dict) and answer.get("__kind") == "distribution":
+        return "distribution", "distribution"
+    if isinstance(answer, dict) and answer.get("__kind") == "distribution_continuous":
+        # Hard to compare; treat as distribution-repr (will mostly mismatch).
+        return "distribution", "distribution"
+    if isinstance(answer, list):
+        return "samples", "samples"
+    return "value", "value"
+
+
+def truncate_prose(prose: str, max_chars: int = 1200) -> str:
+    """Keep the last few paragraphs as the prompt context."""
+    paragraphs = re.split(r"\n\s*\n", prose.strip())
+    out = []
+    total = 0
+    for p in reversed(paragraphs):
+        p = p.strip()
+        if not p or p.startswith("#"):
+            continue
+        if total + len(p) > max_chars and out:
+            break
+        out.insert(0, p)
+        total += len(p)
+    return "\n\n".join(out)
+
+
+def build_atom(chapter_name: str, idx: int, prose: str, code: str,
+               *, id_prefix: str, label: str, source_subpath: str,
+               timeout: int = 30) -> dict | None:
+    wrapped = wrap_with_answer(code)
+    if wrapped is None:
+        return None
+    res = execute_webppl(wrapped, timeout=timeout, random_seed=42)
+    if not res.success:
+        return None
+    if res.answer is None:
+        return None
+    shape, mode = classify_answer(res.answer)
+
+    prompt_prose = truncate_prose(prose)
+    if not prompt_prose:
+        return None
+
+    atom_id = f"{id_prefix}-{chapter_name}/block-{idx}"
+    return {
+        "id": atom_id,
+        "source": source_subpath,
+        "task_type": "write_from_scratch",
+        "eval_mode": mode,
+        "answer_shape": shape,
+        "prompt": (
+            f"From the {label} \"{chapter_name}\":\n\n"
+            f"{prompt_prose}\n\n"
+            f"Write a WebPPL program that demonstrates this. End with "
+            f"`var ANSWER = <expression>;` where the expression is the "
+            f"thing the prose is asking us to compute / produce."
+        ),
+        "groundtruth_code": wrapped,
+        "groundtruth_output": res.answer,
+    }
+
+
+def process_chapter(path: Path, *, id_prefix: str, label: str,
+                    source_subpath_prefix: str,
+                    timeout: int = 30, max_blocks: int | None = None,
+                    workers: int = 1):
+    try:
+        text = path.read_text()
+    except Exception:
+        return [], 0, 0
+    blocks = list(split_blocks(text))
+    if max_blocks:
+        blocks = blocks[:max_blocks]
+    chapter_name = path.stem
+    source_subpath = f"{source_subpath_prefix}/{path.name}"
+    runnable_candidates = [
+        (i, prose, code)
+        for i, (prose, code) in enumerate(blocks)
+        if looks_like_full_program(code)
+    ]
+
+    atoms: list[dict] = []
+
+    def _build(args):
+        i, prose, code = args
+        return build_atom(
+            chapter_name, i, prose, code,
+            id_prefix=id_prefix, label=label,
+            source_subpath=source_subpath,
+            timeout=timeout,
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(_build, c): c for c in runnable_candidates}
+        for fut in as_completed(futs):
+            try:
+                atom = fut.result()
+            except Exception:
+                atom = None
+            if atom is not None:
+                atoms.append(atom)
+    atoms.sort(key=lambda a: a["id"])
+    return atoms, len(blocks), len(runnable_candidates)
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--source", choices=list(SOURCES.keys()), required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--timeout", type=int, default=30)
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--max-blocks-per-chapter", type=int, default=None)
+    p.add_argument("--chapters", nargs="+", default=None,
+                   help="Restrict to specific stems")
+    args = p.parse_args()
+
+    cfg = SOURCES[args.source]
+    src = Path(cfg["dir"])
+    chapters = sorted(src.glob("*.md"))
+    if args.chapters:
+        wanted = set(args.chapters)
+        chapters = [c for c in chapters if c.stem in wanted]
+
+    # Source-subpath prefix used in `source` field of each atom
+    src_prefix = src.relative_to("data/sources").as_posix() if str(src).startswith("data/sources") else cfg["id_prefix"]
+
+    print(f"Processing {len(chapters)} files from {args.source}, workers={args.workers}")
+    all_atoms: list[dict] = []
+    t0 = time.time()
+    for chap in chapters:
+        t_chap = time.time()
+        atoms, n_blocks, n_runnable = process_chapter(
+            chap, id_prefix=cfg["id_prefix"], label=cfg["label"],
+            source_subpath_prefix=src_prefix,
+            timeout=args.timeout, max_blocks=args.max_blocks_per_chapter,
+            workers=args.workers,
+        )
+        all_atoms.extend(atoms)
+        print(f"  {chap.stem:40s} blocks={n_blocks:3d} runnable={n_runnable:3d} "
+              f"atoms={len(atoms):3d} ({time.time() - t_chap:.1f}s)")
+
+    write_jsonl(args.output, all_atoms)
+    print(f"\nWrote {len(all_atoms)} atoms to {args.output} "
+          f"in {time.time() - t0:.1f}s")
+
+
+if __name__ == "__main__":
+    main()

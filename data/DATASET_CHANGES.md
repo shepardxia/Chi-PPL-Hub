@@ -164,6 +164,47 @@ clear error message ("program exited 0 but produced no output …").
 This caught at least one prior false-positive (`occams-razor/ex1.2`
 across 3 runs) where `executed` was being over-counted.
 
+## Dataset expansion — round 1
+
+Four additional datasets extracted from the available WebPPL textbook
+ecosystem, using `scripts/extract_atoms.py`. Each prose-with-code block
+becomes one atom; the extractor wraps the last expression in
+`var ANSWER = ...;`, runs it, and keeps blocks that produce a
+distribution / value / sample list.
+
+| dataset | source | atoms | exec rate | KL median / q75 | TV median / q75 |
+|---|---|---|---|---|---|
+| exercises | probmods2/exercises | 76 | 76/76 | 0 / 0 | 0 / 0 |
+| chapters | probmods2/chapters | 121 | 107/121 | 16.9 / 21.9 | 1.0 / 1.0 |
+| dippl | dippl/chapters | 24 | 23/24 | 20.1 / 21.9 | 1.0 / 1.0 |
+| forestdb | forestdb.org/models | 67 | 58/67 | 21.3 / 22.3 | 1.0 / 1.0 |
+| problang | problang/chapters | 50 | 46/50 | 20.7 / 22.1 | 1.0 / 1.0 |
+
+**Observation.** Sonnet 4.6 + primer (no thinking) executes 80-100% of
+atoms across the board, but only the *exercises* dataset gives near-zero
+TV/KL. Every other dataset has TV q75 = 1.0 — meaning the LLM produces
+a runnable program whose output distribution shares no support with the
+groundtruth.
+
+**Diagnosis.** Chapter / model atoms are *demonstrations* of concepts,
+not graded exercises. The extracted prose context (preceding paragraph)
+typically says something like "Consider this binomial example" before
+showing one specific parameter setting. The LLM faithfully writes a
+binomial example (different parameters), and the comparator correctly
+flags it as different. The atoms aren't ill-formed — they just aren't
+*tests* in the way exercises are.
+
+**Iteration paths** (none taken yet, awaiting direction):
+- Tighten extractor prompts to embed the parameter values explicitly.
+- Filter atom candidates to those where the prose clearly pins down a
+  unique answer (heuristics: prose mentions "show that the result is
+  X", or asks "what is the probability of Y" with a specific value).
+- Switch from distribution comparison to *behavioral equivalence*:
+  given the LLM's program and the GT program, sample N times from each
+  and check that the *marginal distributions* match within tolerance,
+  rather than that the support is identical. This handles cases where
+  parameter choices differ but the PPL reasoning is correct.
+
 ## Pending review (not yet changed)
 
 ### Sparse-support / continuous-joint posteriors
