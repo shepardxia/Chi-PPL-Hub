@@ -220,20 +220,48 @@ def truncate_prose(prose: str, max_chars: int = 1200) -> str:
 
 def build_atom(chapter_name: str, idx: int, prose: str, code: str,
                *, id_prefix: str, label: str, source_subpath: str,
+               preceding_code_blocks: list[str] = None,
                timeout: int = 30) -> dict | None:
-    wrapped = wrap_with_answer(code)
+    """Build an atom from a single code block.
+
+    `preceding_code_blocks` is the list of all earlier code blocks in the
+    same file. They're (a) prepended to the GT code so it actually runs,
+    and (b) shown to the LLM as "given code" context so it can reference
+    definitions established earlier in the chapter / model.
+    """
+    preceding_code_blocks = preceding_code_blocks or []
+
+    # Try with full preamble first. If concatenation produces errors
+    # (duplicate var, conflicting definitions), fall back to standalone.
+    def _try(preamble_blocks):
+        preamble = "\n\n".join(preamble_blocks).rstrip()
+        full = (preamble + "\n\n" + code) if preamble else code
+        wrapped = wrap_with_answer(full)
+        if wrapped is None:
+            return None, None, preamble
+        res = execute_webppl(wrapped, timeout=timeout, random_seed=42)
+        if res.success and res.answer is not None:
+            return wrapped, res.answer, preamble
+        return None, None, preamble
+
+    wrapped, answer, preamble = _try(preceding_code_blocks)
+    if wrapped is None and preceding_code_blocks:
+        wrapped, answer, preamble = _try([])
     if wrapped is None:
         return None
-    res = execute_webppl(wrapped, timeout=timeout, random_seed=42)
-    if not res.success:
-        return None
-    if res.answer is None:
-        return None
-    shape, mode = classify_answer(res.answer)
+    shape, mode = classify_answer(answer)
 
     prompt_prose = truncate_prose(prose)
     if not prompt_prose:
         return None
+
+    # Show preceding code blocks to the LLM verbatim.
+    prefix_section = ""
+    if preamble:
+        prefix_section = (
+            f"The following code is given (definitions established "
+            f"earlier in the same source):\n\n```\n{preamble}\n```\n\n"
+        )
 
     atom_id = f"{id_prefix}-{chapter_name}/block-{idx}"
     return {
@@ -245,12 +273,14 @@ def build_atom(chapter_name: str, idx: int, prose: str, code: str,
         "prompt": (
             f"From the {label} \"{chapter_name}\":\n\n"
             f"{prompt_prose}\n\n"
-            f"Write a WebPPL program that demonstrates this. End with "
-            f"`var ANSWER = <expression>;` where the expression is the "
-            f"thing the prose is asking us to compute / produce."
+            f"{prefix_section}"
+            f"Write a WebPPL program that demonstrates what the prose "
+            f"asks for. You may rely on the given code above. End your "
+            f"program with `var ANSWER = <expression>;` (the answer the "
+            f"prose is asking us to compute or produce)."
         ),
         "groundtruth_code": wrapped,
-        "groundtruth_output": res.answer,
+        "groundtruth_output": answer,
     }
 
 
@@ -267,25 +297,30 @@ def process_chapter(path: Path, *, id_prefix: str, label: str,
         blocks = blocks[:max_blocks]
     chapter_name = path.stem
     source_subpath = f"{source_subpath_prefix}/{path.name}"
-    runnable_candidates = [
-        (i, prose, code)
-        for i, (prose, code) in enumerate(blocks)
-        if looks_like_full_program(code)
-    ]
+    # We'll attempt each candidate with a cumulative preamble of all
+    # earlier code blocks in the same file (so block N has access to
+    # definitions in blocks 0..N-1).
+    candidates = []
+    code_history = []
+    for i, (prose, code) in enumerate(blocks):
+        if looks_like_full_program(code):
+            candidates.append((i, prose, code, list(code_history)))
+        code_history.append(code)
 
     atoms: list[dict] = []
 
     def _build(args):
-        i, prose, code = args
+        i, prose, code, preceding = args
         return build_atom(
             chapter_name, i, prose, code,
             id_prefix=id_prefix, label=label,
             source_subpath=source_subpath,
+            preceding_code_blocks=preceding,
             timeout=timeout,
         )
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = {pool.submit(_build, c): c for c in runnable_candidates}
+        futs = {pool.submit(_build, c): c for c in candidates}
         for fut in as_completed(futs):
             try:
                 atom = fut.result()
@@ -294,7 +329,7 @@ def process_chapter(path: Path, *, id_prefix: str, label: str,
             if atom is not None:
                 atoms.append(atom)
     atoms.sort(key=lambda a: a["id"])
-    return atoms, len(blocks), len(runnable_candidates)
+    return atoms, len(blocks), len(candidates)
 
 
 def main():

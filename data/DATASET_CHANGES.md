@@ -205,6 +205,87 @@ flags it as different. The atoms aren't ill-formed — they just aren't
   rather than that the support is identical. This handles cases where
   parameter choices differ but the PPL reasoning is correct.
 
+## Round 2 — cumulative-context extractor + per-atom failure-mode audit
+
+After observing TV q75 = 1.0 across chapters/dippl/forestdb/problang
+in round 1, dug in atom-by-atom.
+
+### Fix applied: cumulative preceding-code as context
+
+`scripts/extract_atoms.py` now passes earlier same-file code blocks to
+the atom builder. The builder tries (a) full preamble + this block;
+falls back to (b) standalone if (a) fails to execute (typically due to
+duplicate `var` declarations). This recovers atoms whose code block
+references definitions from earlier blocks in the same file.
+
+Lift was modest:
+- chapters: TV=0 stayed at 3, TV<0.5 went 20 → 20 (no real change)
+- forestdb: TV=0 went 2 → 6 (small lift)
+- problang: TV=0 stayed at 2
+
+So cumulative context fixed *some* atoms but most remaining failures
+are not "missing definitions" — they are *prose underspecification*.
+
+### Atom-level audit, sample failures
+
+Sampled atoms with TV=1.0 to identify what's actually breaking:
+
+**1. Off-by-one / convention differences** (e.g., `chapters/145-non-parametric-models/block-1`):
+   - Prose: *"walk down this list, deciding when to stop."*
+   - GT returns 1-indexed values `{1,2,3,4}`; LLM returns 0-indexed `{0,1,2,3}`.
+   - Both are correct implementations of the prose; supports are
+     disjoint; TV=1.0.
+
+**2. Different rep of the same model** (e.g., `forestdb/2025-problang-comparison-class/block-14`):
+   - GT uses continuous `Gaussian(stateParams)` over `stateVals`.
+   - LLM uses discrete `[1,2,3,4,5]` states.
+   - Both are valid concretizations of "comparison class model".
+
+**3. Different inference method**:
+   - GT uses `repeat(5000, ...)` (returns list of samples → shape=samples).
+   - LLM uses `Infer({method: 'forward', samples: 10000}, ...)` (returns Distribution).
+   - The shape mismatch alone forces TV=1.
+
+### Distribution of failure modes per dataset (worst-case TV per atom)
+
+```
+dataset       TV=0  TV<.05  TV<.5   TV<1  TV=1   failed   total
+exercises       43       9      9      7     2        0      70
+chapters         3       4     13     22    47       12     101
+dippl            2       1      1      7     4        1      16
+forestdb         6       0      6      6    19       11      48
+problang         2       0      1     10    10        6      29
+```
+
+Even with cumulative context, ~50% of chapter atoms and ~40% of
+forestdb/problang atoms hit TV=1.0. The bottleneck is the prose itself,
+not extraction.
+
+### What the new datasets are good for (and what they aren't)
+
+**Good for:** "can the model write runnable WebPPL conditioned on a
+prose description?" Exec rates of 80-95% across the four sources show
+the model produces syntactically valid programs that execute. This is
+a meaningful capability check.
+
+**Not good for:** "can the model produce the *intended* PPL program?"
+The discrete TV/KL comparator measures equivalence of returned
+distributions, which requires the prose to uniquely pin down both the
+model and the output convention. Pedagogical sources don't.
+
+### Three iteration paths (none chosen yet)
+
+1. **Tighten extractor prompts**: programmatically detect under-specified
+   prose and either (a) drop the atom, (b) augment with concrete output
+   conventions ("return the integer index, 0-indexed").
+2. **Behavioral-equivalence comparator**: instead of comparing exact
+   support, sample N times from each program; compare *marginals* or
+   *summary statistics* (mean, variance, top-1 mode) rather than full
+   distributions.
+3. **Filter to test-shaped atoms**: only keep atoms whose prose contains
+   a question ("what is the probability of...", "show that..."). Drops
+   most demonstration-style content.
+
 ## Pending review (not yet changed)
 
 ### Sparse-support / continuous-joint posteriors
