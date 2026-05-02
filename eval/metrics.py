@@ -96,7 +96,8 @@ def _kl(p: dict, q: dict, epsilon: float = 1e-10) -> float:
 
 def _tv(p: dict, q: dict) -> float:
     keys = set(p) | set(q)
-    return 0.5 * sum(abs(p.get(k, 0.0) - q.get(k, 0.0)) for k in keys)
+    raw = 0.5 * sum(abs(p.get(k, 0.0) - q.get(k, 0.0)) for k in keys)
+    return min(1.0, max(0.0, raw))
 
 
 def kl_divergence(p_ser, q_ser) -> float | None:
@@ -131,9 +132,10 @@ def empirical_tv(gen_samples: list, gt_samples: list) -> float | None:
         gt_hist[_sample_key(s)] = gt_hist.get(_sample_key(s), 0) + 1
     n_g, n_t = len(gen_samples), len(gt_samples)
     keys = set(gen_hist) | set(gt_hist)
-    return 0.5 * sum(
+    raw = 0.5 * sum(
         abs(gen_hist.get(k, 0) / n_g - gt_hist.get(k, 0) / n_t) for k in keys
     )
+    return min(1.0, max(0.0, raw))
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +183,35 @@ def _cmp_distribution(gen, gt) -> dict:
     return {"shape": SHAPE_DISTRIBUTION, "kl": _kl(p, q), "tv": _tv(p, q)}
 
 
+def _distribution_to_samples(d: dict, n: int = 200) -> list | None:
+    """Coerce a serialized distribution into a sample list for histogram
+    comparison with samples-shape atoms. Returns ~n samples drawn from
+    the distribution's support according to its probs.
+    """
+    if not isinstance(d, dict) or d.get("__kind") != KIND_DISTRIBUTION:
+        return None
+    support = d.get("support") or []
+    probs = d.get("probs") or []
+    if not support or not probs:
+        return None
+    total = sum(probs)
+    if total <= 0:
+        return None
+    norm = [p / total for p in probs]
+    # Deterministic expansion: each value gets round(p * n) copies.
+    out = []
+    for v, p in zip(support, norm):
+        out.extend([v] * max(1, round(p * n)))
+    return out[:max(n, len(support))]
+
+
 def _cmp_samples(gen, gt) -> dict:
+    # Allow comparison when one side produced a distribution and the
+    # other a sample list — coerce by drawing from the distribution.
+    if isinstance(gen, dict) and gen.get("__kind") == KIND_DISTRIBUTION:
+        gen = _distribution_to_samples(gen) or gen
+    if isinstance(gt, dict) and gt.get("__kind") == KIND_DISTRIBUTION:
+        gt = _distribution_to_samples(gt) or gt
     if not isinstance(gen, list) or not isinstance(gt, list):
         return {"shape": SHAPE_SAMPLES, "ok": False, "error": "samples must be a list",
                 "gen_type": type(gen).__name__, "gt_type": type(gt).__name__}

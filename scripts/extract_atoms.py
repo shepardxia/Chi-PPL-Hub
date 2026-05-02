@@ -191,19 +191,44 @@ def wrap_with_answer(code: str) -> str | None:
 
 
 def classify_answer(answer) -> tuple[str, object]:
-    """Return (answer_shape, eval_mode) by inspecting the executed answer."""
+    """Return (answer_shape, eval_mode) by inspecting the executed answer.
+
+    Short lists (≤4 entries) of scalars are treated as structured *values*
+    (e.g. an HDI `[low, up]`, a (mean, var) tuple) rather than samples,
+    since two-point empirical distributions don't carry meaningful TV.
+    """
     if isinstance(answer, dict) and answer.get("__kind") == "distribution":
         return "distribution", "distribution"
     if isinstance(answer, dict) and answer.get("__kind") == "distribution_continuous":
         # Hard to compare; treat as distribution-repr (will mostly mismatch).
         return "distribution", "distribution"
     if isinstance(answer, list):
+        if len(answer) <= 4 and all(not isinstance(x, (list, dict)) for x in answer):
+            return "value", "value"
         return "samples", "samples"
     return "value", "value"
 
 
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_DATA_URI_RE = re.compile(r"data:image/[a-z]+;base64,[A-Za-z0-9+/=\s]+", re.IGNORECASE)
+
+
+def sanitize_prose(prose: str) -> str:
+    """Strip <img> tags and inline base64 image URIs from prose.
+
+    Source markdown sometimes inlines screenshots as `<img src="data:..."
+    base64-blob`, which can balloon a prompt to 100+ KB of pixels with
+    zero useful prose for a code-generation task. We replace such tags
+    with a `[image]` marker so the surrounding prose still parses cleanly.
+    """
+    prose = _IMG_TAG_RE.sub("[image]", prose)
+    prose = _DATA_URI_RE.sub("[image]", prose)
+    return prose
+
+
 def truncate_prose(prose: str, max_chars: int = 1200) -> str:
     """Keep the last few paragraphs as the prompt context."""
+    prose = sanitize_prose(prose)
     paragraphs = re.split(r"\n\s*\n", prose.strip())
     out = []
     total = 0

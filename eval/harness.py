@@ -36,6 +36,21 @@ def _is_top_samples(shape) -> bool:
     return shape == SHAPE_SAMPLES
 
 
+def _is_aggregate_samples(answer) -> bool:
+    """An aggregated-samples answer is a list of scalars / shallow records.
+
+    Programs that already produce a list of samples internally (via
+    `repeat(N, fn)`, `_.map`, etc.) shouldn't be re-run N times by the
+    harness — the list itself IS the sample collection.
+    """
+    if not isinstance(answer, list):
+        return False
+    return len(answer) >= 5 and all(
+        not isinstance(x, list) or len(x) <= 8
+        for x in answer[:10]
+    )
+
+
 def _run_mc(code, n, timeout, base_seed=DEFAULT_SEED, workers=DEFAULT_MC_WORKERS):
     """Run `code` with seeds base_seed..base_seed+n-1 in parallel.
 
@@ -82,8 +97,19 @@ def _ensure_groundtruth_output(atom, *, cfg: EvalConfig):
     return res.answer, {"source": "executed"}
 
 
-def _run_gen(atom, generated_code, *, cfg: EvalConfig):
+def _run_gen(atom, generated_code, *, cfg: EvalConfig, gt_answer=None):
     if _is_top_samples(atom["answer_shape"]):
+        # If the GT's cached answer is already a list (aggregated samples),
+        # the gen should also run once — otherwise we'd compare list-of-N-lists
+        # vs flat-list-of-scalars and trivially get TV=1. The comparator will
+        # coerce a Distribution-shaped gen result to samples if needed.
+        if _is_aggregate_samples(gt_answer):
+            res = execute_webppl(generated_code, timeout=cfg.timeout, random_seed=cfg.seed)
+            return {
+                "executed": res.success,
+                "answer": res.answer if res.success else None,
+                "error": None if res.success else res.error_message,
+            }
         answers, first_error = _run_mc(generated_code, cfg.n_mc, cfg.timeout,
                                        base_seed=cfg.seed, workers=cfg.mc_workers)
         non_null = [a for a in answers if a is not None]
@@ -114,7 +140,7 @@ def evaluate_atom(
     if cfg is None:
         cfg = EvalConfig(timeout=timeout, seed=seed, n_mc=n_mc)
     gt_answer, gt_meta = _ensure_groundtruth_output(atom, cfg=cfg)
-    gen = _run_gen(atom, generated_code, cfg=cfg)
+    gen = _run_gen(atom, generated_code, cfg=cfg, gt_answer=gt_answer)
 
     out = {
         "id": atom["id"],

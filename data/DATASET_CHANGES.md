@@ -286,6 +286,128 @@ model and the output convention. Pedagogical sources don't.
    a question ("what is the probability of...", "show that..."). Drops
    most demonstration-style content.
 
+## Round 3 — harness bug: aggregate-samples mishandled
+
+Per-shape per-dataset audit revealed an actual harness bug.
+
+`scripts/extract_atoms.py` classifies an atom as `answer_shape="samples"`
+whenever the GT's last expression returns a list. But there are two
+fundamentally different "samples" patterns:
+
+1. **Per-run sample**: GT returns a single bool/int/value (`flip(.4)`).
+   The harness reruns N times to estimate the marginal distribution.
+   *This is what the original exercises atoms use.*
+2. **Aggregate samples**: GT returns a pre-collected list (e.g.
+   `repeat(5000, fn)`, `_.map(...)`). The list IS the sample collection.
+   *This is what most extracted chapter / forestdb / problang atoms use.*
+
+The harness was treating both the same — running gen N=100 times for
+samples-shape atoms. For an aggregate atom, this meant gen would
+produce a list-of-100-lists, which the comparator compared against a
+flat list of scalars. The keys (`json.dumps` of an entire list of 5000
+ints vs. a single int) never matched, so TV=1.0 was guaranteed.
+
+### Fixes applied
+
+- `eval/harness.py:_is_aggregate_samples(answer)` — detects whether the
+  cached GT answer is a flat list of scalars (treat as aggregate) vs.
+  a per-run sample.
+- `eval/harness._run_gen` — for aggregate-samples atoms, runs gen ONCE
+  (not N times) so both sides produce a flat sample list.
+- `eval/metrics._cmp_samples` — coerces a Distribution-shaped gen
+  result into a sample list (deterministic expansion of support+probs)
+  before histogram comparison. Handles the case where GT uses
+  `repeat(N, fn)` and gen uses `Infer({forward}, ...)` — same intent,
+  different realization.
+
+### Impact
+
+```
+dataset      TV=0 before  TV=0 after  TV=1 before  TV=1 after
+chapters         3            6           47           32
+dippl            2            2            4            5
+forestdb         6            6           19           19
+problang         2            2           10            8
+```
+
+Chapters get the biggest lift (15 fewer TV=1 atoms become non-trivial
+scoring). Other datasets see modest changes. The remaining TV=1 cases
+are real ambiguities (off-by-one conventions, different
+concretizations, prose underspecification).
+
+## Round 4 — image scrubbing, short-list reclassification, TV clamp, dominant-failure analysis
+
+Continued failure-mode digging across the 4 new datasets.
+
+### Bugs found and fixed
+
+1. **Inline base64 image data leaking into prompts.** One forestdb
+   atom (`forestdb-2025-problang-politeness/block-1`) had a 167 KB
+   `<img src="data:image/png;base64,...">` in the prose, leaving zero
+   useful prompt content. Added `sanitize_prose` in
+   `scripts/extract_atoms.py` to strip `<img>` tags and
+   `data:image/...;base64` URIs (replaced with `[image]`). Wired into
+   `truncate_prose` so future extractions inherit the fix; also
+   applied retroactively to existing prompts (4 atoms changed: 1
+   forestdb + 3 chapters). The politeness atom dropped from 167 KB →
+   275 bytes — flagged for manual review (the image *was* the
+   question).
+
+2. **Floating-point TV > 1.0.** Seven atoms had TV values like
+   `1.0000000000000104` from disjoint-support distributions where
+   `0.5 * sum(|p - q|)` accumulated to slightly over 1.0. Clamped TV
+   to `[0, 1]` in both `_tv` and `empirical_tv` in
+   `eval/metrics.py`.
+
+3. **Short fixed-size lists mis-classified as samples-shape.** GT
+   code that returns an HDI `[low, up]` or a `[mean, var]` tuple is a
+   structured *value*, not a sample collection — but the extractor
+   was calling every list-typed answer "samples". Updated
+   `classify_answer` in `scripts/extract_atoms.py`: a list of length
+   ≤4 with all-scalar entries is now `value`-shape (elementwise
+   `value_match` with `rtol=0.05`). Applied retroactively: 3 chapter
+   atoms, 2 dippl atoms, 1 problang atom reclassified samples →
+   value. (v2/exercises reverted — it has record-shape atoms from a
+   different pipeline that doesn't go through this classifier.)
+
+### Failure-mode breakdown (post-fix, sonnet-4.6 + primer)
+
+```
+dataset    TV=0  <.05  <.5  <1  =1  val-ok  val-no  shape-mm  exec-fail   total
+exercises   43    9     9   7   2    4       2       0         0          76
+chapters     6    4    18  27  30    0      11      14        12         122
+dippl        2    1     1   5   6    2       3       3         1          24
+forestdb     6    0     6   6  19    0       1      18        11          67
+problang     2    0     1  10   5    0       3      24         6          51
+```
+
+### Dominant remaining failure: prose under-specification
+
+The single largest non-trivial-TV bin in problang (24/51) and
+forestdb (18/67) is now **shape mismatch** — gen returns a dict like
+`{state_0: dist, ..., state_3: dist}` while GT picks one specific
+marginal like `speaker(3)`. The LLM reads the same prose and
+naturally produces the more comprehensive answer "for completeness".
+
+Inspected examples:
+
+- `problang-02-pragmatics/block-3`: prose `display("speaker's
+  production probabilities for state 3:")` tags one specific state.
+  GT extracts `speaker(3)`; LLM emits `{state_0...state_3: ...}`.
+- `problang-01-introduction/block-0`: GT `literalListener("blue")`;
+  LLM `{L0_blue, L0_circle, L0_red, L0_square: ...}`.
+- `forestdb-bkmt-scalar-implicature/block-10`: GT one marginal; LLM
+  `{knowledgeModel_none, jointModel_none, statePrior}`.
+
+This is a **prose-quality limit of the source corpora**, not a
+harness bug. Tutorial markdown has loose surrounding prose ("let's
+see how the speaker behaves") with the specific question implied
+only by a `display(...)` literal. Fixing properly would require
+either (a) hoisting `display(...)` strings into the prompt as the
+explicit question (covers ~11 atoms) or (b) making the comparator do
+fuzzy field-extraction from dict-shaped gen results — both deferred
+as out of scope for "fix the pipeline".
+
 ## Pending review (not yet changed)
 
 ### Sparse-support / continuous-joint posteriors
