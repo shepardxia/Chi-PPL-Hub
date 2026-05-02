@@ -190,6 +190,30 @@ def wrap_with_answer(code: str) -> str | None:
     return f"{before}\nvar ANSWER = ({last});\n" if before else f"var ANSWER = ({last});\n"
 
 
+def format_answer_shape_hint(shape) -> str:
+    """One-line spec of the expected ANSWER output type for the prompt.
+
+    The atom's `answer_shape` is determined by what the GT actually
+    returns (we know it because we ran it). Telling the LLM the shape
+    is task spec — like a return-type annotation — not answer leakage.
+    """
+    if isinstance(shape, dict) and "record" in shape:
+        fields = ", ".join(
+            f"{k}: <{format_answer_shape_hint(v)}>"
+            for k, v in shape["record"].items()
+        )
+        return f"a record like {{{fields}}}"
+    if shape == "distribution":
+        return ("a single distribution object (e.g., the return of "
+                "`Infer({...}, function() { ... })`)")
+    if shape == "samples":
+        return ("a list of samples — typically the return of "
+                "`repeat(N, function() { ... })` or equivalent")
+    if shape == "value":
+        return "a single scalar or short fixed-size tuple (number, string, boolean, or list of those)"
+    return "the answer"
+
+
 def classify_answer(answer) -> tuple[str, object]:
     """Return (answer_shape, eval_mode) by inspecting the executed answer.
 
@@ -301,8 +325,8 @@ def build_atom(chapter_name: str, idx: int, prose: str, code: str,
             f"{prefix_section}"
             f"Write a WebPPL program that demonstrates what the prose "
             f"asks for. You may rely on the given code above. End your "
-            f"program with `var ANSWER = <expression>;` (the answer the "
-            f"prose is asking us to compute or produce)."
+            f"program with `var ANSWER = <expression>;` where the value "
+            f"of ANSWER is {format_answer_shape_hint(shape)}."
         ),
         "groundtruth_code": wrapped,
         "groundtruth_output": answer,

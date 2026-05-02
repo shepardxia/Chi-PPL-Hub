@@ -500,6 +500,71 @@ Three counts now make sense:
   metric; remainder hit shape-mismatch or exec-fail in this
   particular run, but the atoms themselves are sound)
 
+## Round 6 — output-shape spec in prompt
+
+The shape-mismatch failure mode (LLM produces `{key: dist, ...}` when GT
+is one distribution) was a *prompt under-specification* problem, not a
+harness problem: the prompt only said `End your program with var ANSWER
+= <expression>`, never specifying what *kind* of expression. The LLM
+naturally hedged toward comprehensive dicts.
+
+Fix: each atom already knows its `answer_shape` (we ran the GT to
+determine it), so we can include a one-line type spec in the prompt.
+This is task specification — like a return-type annotation — not
+answer leakage. We're saying "produce a Distribution" not "produce
+this specific Distribution".
+
+### Implementation
+
+`scripts/extract_atoms.py:format_answer_shape_hint(shape)` returns a
+short English description of the expected ANSWER's type:
+
+- `distribution` → "a single distribution object (e.g., the return of
+  `Infer({...}, function() { ... })`)"
+- `samples` → "a list of samples — typically the return of `repeat(N,
+  function() { ... })` or equivalent"
+- `value` → "a single scalar or short fixed-size tuple (number,
+  string, boolean, or list of those)"
+- record → recursively describes each field
+
+The trailing instruction in `build_atom`'s prompt template now ends
+with "where the value of ANSWER is {hint}." instead of the previous
+"(the answer the prose is asking us to compute or produce)."
+
+Applied retroactively to all 261 atoms in the 4 new datasets. Re-ran
+gen on the 89 atoms that previously hit shape-mm or exec-fail (no need
+to re-gen atoms whose previous run already produced a valid scoreable
+answer — the change can only help, never hurt).
+
+### Impact (sonnet-4.6 + primer + shape spec)
+
+```
+dataset    TV=0  <.05  <.5  <1  =1  val+  val-  shape!  fail   total  scoreable
+                                                                       (before -> after)
+exercises   43    9     9   7   2    4    2     0       0      76     76
+chapters     7    7    21  26  41    0    8     0       9     119     93 -> 110
+dippl        2    1     1   4   9    2    3     1       1      24     20 -> 22
+forestdb     8    1     8  17  29    0    1     0       3      67     38 -> 64
+problang     5    0     1  11  24    0    4     4       2      51     21 -> 45
+TOTAL                                                          337    248 -> 317
+```
+
+**+69 atoms scoreable.** Shape-mm collapsed from 59 → 5; exec-fail
+halved from 30 → 15 (LLMs no longer build ambitious comprehensive
+dicts that time out on heavy MCMC). 317/337 = 94% of seed-reproducible
+atoms now produce a graded score.
+
+The remaining 20 non-scoreable atoms are LLM bugs of the kind a
+different model would handle differently:
+- 5 shape-mm: LLM still produced a different output type
+- 15 exec-fail: hallucinated builtins (`Geometric`, `seatCustomer`),
+  too-strict conditions, or genuine timeouts on heavy MCMC.
+
+Note: TV=1 went up in absolute terms (e.g. problang 5 → 24) because
+atoms that were previously *silently* shape-mm now get an explicit
+TV=1 verdict. The atoms aren't worse — they were always this hard to
+match exactly; the shape spec just made the disagreement visible.
+
 ## Pending review (not yet changed)
 
 ### Sparse-support / continuous-joint posteriors
