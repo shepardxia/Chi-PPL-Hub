@@ -195,12 +195,36 @@ main { padding: 14px 20px 60px; max-width: 1400px; margin: 0 auto; }
   font-size: 10.5px; font-weight: 600; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;
 }
+.code-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.code-pair > div > .section-title { margin-bottom: 4px; }
+@media (max-width: 900px) { .code-pair { grid-template-columns: 1fr; } }
 pre {
   background: var(--code-bg); border: 1px solid var(--border);
   border-radius: 4px; padding: 8px 10px; overflow-x: auto;
   margin: 0; font: 12px/1.5 ui-monospace, Menlo, monospace;
   white-space: pre-wrap; word-wrap: break-word;
 }
+.dist-viz {
+  background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 8px;
+  font: 11px ui-monospace, Menlo, monospace;
+}
+.dist-viz svg { display: block; }
+.dist-row { display: flex; align-items: center; gap: 6px; margin: 1px 0; }
+.dist-row .lab {
+  flex: 0 0 38%; max-width: 38%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: #444;
+}
+.dist-row .bar-track {
+  flex: 1; height: 9px; background: #e8e8e6; border-radius: 2px; overflow: hidden;
+}
+.dist-row .bar-fill { height: 100%; background: #6a8caf; }
+.dist-row .pv {
+  flex: 0 0 50px; text-align: right; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.atom.is-target { box-shadow: 0 0 0 2px var(--accent); }
 .prompt-md {
   white-space: pre-wrap;
   font-size: 13px; line-height: 1.5;
@@ -228,11 +252,18 @@ pre {
 TAIL = """\
 <script>
 const atoms = Array.from(document.querySelectorAll('.atom'));
+const main = document.querySelector('main');
 const search = document.getElementById('search');
+const sortSel = document.getElementById('sort');
 const dsPills = Array.from(document.querySelectorAll('.pill[data-ds]'));
 const bkPills = Array.from(document.querySelectorAll('.pill[data-bk]'));
 const visibleCount = document.getElementById('visible-count');
 const emptyMsg = document.getElementById('empty-msg');
+
+const BUCKET_ORDER = {
+  'fail': 0, 'shape!': 1, 'TV=1': 2, 'val-': 3,
+  'TV<1': 4, 'TV<.5': 5, 'TV<.05': 6, 'TV=0': 7, 'val+': 8, 'no-run': 9,
+};
 
 function activeSet(pills, attr) {
   const set = new Set();
@@ -256,6 +287,28 @@ function applyFilter() {
   emptyMsg.style.display = visible === 0 ? '' : 'none';
 }
 
+function applySort() {
+  const mode = sortSel.value;
+  const sorted = [...atoms];
+  if (mode === 'bucket') {
+    sorted.sort((a, b) => (BUCKET_ORDER[a.dataset.bk] ?? 99) - (BUCKET_ORDER[b.dataset.bk] ?? 99)
+                          || a.dataset.aid.localeCompare(b.dataset.aid));
+  } else if (mode === 'tv-desc' || mode === 'tv-asc') {
+    const dir = mode === 'tv-desc' ? -1 : 1;
+    sorted.sort((a, b) => {
+      const av = a.dataset.tv === '' ? null : parseFloat(a.dataset.tv);
+      const bv = b.dataset.tv === '' ? null : parseFloat(b.dataset.tv);
+      if (av === null && bv === null) return a.dataset.aid.localeCompare(b.dataset.aid);
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return dir * (av - bv) || a.dataset.aid.localeCompare(b.dataset.aid);
+    });
+  } else {
+    sorted.sort((a, b) => a.dataset.aid.localeCompare(b.dataset.aid));
+  }
+  for (const a of sorted) main.appendChild(a);
+}
+
 function togglePill(pill) {
   pill.classList.toggle('active');
   applyFilter();
@@ -263,8 +316,69 @@ function togglePill(pill) {
 for (const p of [...dsPills, ...bkPills]) p.addEventListener('click', () => togglePill(p));
 search.addEventListener('input', applyFilter);
 search.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { search.value = ''; applyFilter(); }
+  if (e.key === 'Escape') { e.target.blur(); search.value = ''; applyFilter(); }
 });
+sortSel.addEventListener('change', applySort);
+
+// URL hash deep linking: open + scroll to atom on load and on hashchange.
+function focusFromHash() {
+  const h = location.hash.slice(1);
+  if (!h) return;
+  const t = document.getElementById(h);
+  if (!t) return;
+  for (const a of atoms) a.classList.remove('is-target');
+  t.classList.add('is-target');
+  t.open = true;
+  t.scrollIntoView({block: 'start'});
+}
+window.addEventListener('hashchange', focusFromHash);
+
+// Update hash when an atom is opened (so URL is shareable).
+for (const a of atoms) {
+  a.addEventListener('toggle', () => {
+    if (a.open) history.replaceState(null, '', '#' + a.id);
+  });
+}
+
+// Keyboard shortcuts: / to focus search, j/k to navigate visible atoms, esc to clear.
+function visibleAtoms() { return atoms.filter(a => a.style.display !== 'none'); }
+function currentIndex(list) {
+  for (let i = 0; i < list.length; i++) if (list[i].classList.contains('is-target')) return i;
+  return -1;
+}
+function focusAtom(a) {
+  for (const x of atoms) x.classList.remove('is-target');
+  a.classList.add('is-target');
+  a.scrollIntoView({block: 'center', behavior: 'smooth'});
+  history.replaceState(null, '', '#' + a.id);
+}
+document.addEventListener('keydown', e => {
+  if (e.target === search || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+    if (e.key === 'Escape') e.target.blur();
+    return;
+  }
+  if (e.key === '/') { e.preventDefault(); search.focus(); search.select(); return; }
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.atom.is-target').forEach(a => a.classList.remove('is-target'));
+    return;
+  }
+  const list = visibleAtoms();
+  if (list.length === 0) return;
+  if (e.key === 'j' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    const i = currentIndex(list);
+    focusAtom(list[Math.min(i + 1, list.length - 1)] || list[0]);
+  } else if (e.key === 'k' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const i = currentIndex(list);
+    focusAtom(list[Math.max(i - 1, 0)] || list[0]);
+  } else if (e.key === 'Enter') {
+    const i = currentIndex(list);
+    if (i >= 0) list[i].open = !list[i].open;
+  }
+});
+
+focusFromHash();
 </script>
 </body>
 </html>
@@ -321,6 +435,47 @@ def _shape_label(shape) -> str:
     return str(shape)
 
 
+def _safe_id_for_hash(aid: str) -> str:
+    """DOM ids — strip characters that break URL hash + querySelector."""
+    return aid.replace("/", "--").replace(" ", "_")
+
+
+def _render_distribution_viz(d: dict, max_rows: int = 12) -> str | None:
+    """Render a {__kind:distribution, support, probs} as a horizontal bar chart.
+
+    Returns None if `d` isn't a recognizable distribution.
+    """
+    if not isinstance(d, dict) or d.get("__kind") != "distribution":
+        return None
+    support = d.get("support") or []
+    probs = d.get("probs") or []
+    if not support or len(support) != len(probs):
+        return None
+    pairs = sorted(zip(support, probs), key=lambda kv: -kv[1])
+    truncated = len(pairs) > max_rows
+    pairs = pairs[:max_rows]
+    pmax = max((p for _, p in pairs), default=1.0) or 1.0
+    rows = []
+    for v, p in pairs:
+        if isinstance(v, (dict, list)):
+            label = json.dumps(v, sort_keys=True)
+        else:
+            label = str(v)
+        if len(label) > 40:
+            label = label[:37] + "…"
+        bar_pct = max(1.0, 100.0 * p / pmax) if p > 0 else 0
+        rows.append(
+            f'<div class="dist-row">'
+            f'<span class="lab" title="{html.escape(str(v))}">{html.escape(label)}</span>'
+            f'<span class="bar-track"><span class="bar-fill" style="width:{bar_pct:.1f}%"></span></span>'
+            f'<span class="pv">{p:.4f}</span>'
+            f'</div>'
+        )
+    suffix = (f'<div class="dist-row"><span class="lab" style="color:var(--muted)">'
+              f'… {len(d["support"]) - max_rows} more</span></div>') if truncated else ""
+    return '<div class="dist-viz">' + "".join(rows) + suffix + '</div>'
+
+
 def _short_metric(scored_rec: dict | None) -> str:
     """One short string summarizing the metric for the row badge."""
     if scored_rec is None:
@@ -337,22 +492,16 @@ def _short_metric(scored_rec: dict | None) -> str:
     return ""
 
 
-def _render_run(scored_rec: dict | None) -> str:
+def _gen_code(scored_rec: dict | None) -> str | None:
     if scored_rec is None:
-        return ('<div class="section"><div class="section-title">model response</div>'
-                '<div class="empty" style="padding:12px">no run available for this atom</div></div>')
-    ev = scored_rec.get("evaluation", {}) or {}
-    gen = ev.get("gen", {}) or {}
-    code = scored_rec.get("generation", {}).get("code", "") or ""
-    error = gen.get("error")
-    out = ['<div class="section"><div class="section-title">model response</div>']
-    if error:
-        out.append(f'<div class="run-row"><div class="section-title">error</div>'
-                   f'<pre class="err">{html.escape(str(error)[:600])}</pre></div>')
-    out.append(f'<div class="run-row">'
-               f'<pre>{html.escape(code)}</pre></div>')
-    out.append('</div>')
-    return "".join(out)
+        return None
+    return scored_rec.get("generation", {}).get("code", "") or None
+
+
+def _gen_error(scored_rec: dict | None) -> str | None:
+    if scored_rec is None:
+        return None
+    return (scored_rec.get("evaluation", {}).get("gen", {}) or {}).get("error")
 
 
 # ---------------------------------------------------------------------------
@@ -411,13 +560,21 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
 
     parts.append(
         '<header>'
-        '<h1>WebPPL eval atoms</h1>'
+        '<h1>WebPPL eval atoms <span class="small" style="color:var(--muted);font-weight:400;font-size:11px">'
+        '· press <code>/</code> to search, <code>j</code>/<code>k</code> to navigate, <code>esc</code> to clear</span></h1>'
         f'<div class="summary">{summary_html}</div>'
         '<div class="filterbar">'
         '<span class="label">dataset</span>'
         f'{ds_pills}'
         '<span class="label" style="margin-left:12px">bucket</span>'
         f'{bk_pills}'
+        '<select id="sort" style="margin-left:8px;padding:4px 8px;border:1px solid var(--border);'
+        'border-radius:4px;font-size:12px;background:#fff">'
+        '<option value="aid">sort: id</option>'
+        '<option value="bucket">sort: bucket (worst→best)</option>'
+        '<option value="tv-desc">sort: TV high→low</option>'
+        '<option value="tv-asc">sort: TV low→high</option>'
+        '</select>'
         '<input id="search" type="search" placeholder="search id / source / shape / prompt...">'
         '</div>'
         '</header>'
@@ -436,11 +593,13 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
             metric_short = _short_metric(scored_rec)
 
             prompt_html = _render_prompt(atom.get("prompt", ""))
-            gt_code = html.escape(atom.get("groundtruth_code", ""))
+            gt_code = atom.get("groundtruth_code", "")
             gt_output = atom.get("groundtruth_output")
             gt_output_str = json.dumps(gt_output, indent=2) if gt_output is not None else "(not cached)"
             gt_output_str = _truncate(gt_output_str, 4000)
-            gt_output_html = html.escape(gt_output_str)
+
+            gen_code = _gen_code(scored_rec)
+            gen_err = _gen_error(scored_rec)
 
             search_haystack = " ".join([
                 aid, src, ds_label, shape_str, str(atom.get("eval_mode", "")),
@@ -453,10 +612,55 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
                 f'<span class="badge bucket {bucket_class(bucket)}">{html.escape(bucket)}</span>'
             )
 
+            # Sort key: TV value (or sentinel) for sort-by-tv option
+            tv_for_sort = ""
+            if scored_rec is not None:
+                metrics = (scored_rec.get("evaluation", {}) or {}).get("metrics") or {}
+                tvs = [v for k, v in metrics.items() if k.endswith("tv")]
+                if tvs:
+                    tv_for_sort = f"{max(tvs):.6f}"
+
+            # Side-by-side GT vs gen code
+            if gen_code is not None:
+                code_section = (
+                    f'<div class="section"><div class="code-pair">'
+                    f'<div><div class="section-title">groundtruth code</div>'
+                    f'<pre>{html.escape(gt_code)}</pre></div>'
+                    f'<div><div class="section-title">generated code</div>'
+                    + (f'<pre class="err">{html.escape(str(gen_err)[:600])}</pre>' if gen_err else '')
+                    + f'<pre>{html.escape(gen_code)}</pre></div>'
+                    f'</div></div>'
+                )
+            else:
+                code_section = (
+                    f'<div class="section"><div class="section-title">groundtruth code</div>'
+                    f'<pre>{html.escape(gt_code)}</pre></div>'
+                )
+
+            # GT output: distribution-shape gets the bar chart, plus collapsible JSON
+            gt_viz = _render_distribution_viz(gt_output) if isinstance(gt_output, dict) else None
+            if gt_viz:
+                output_section = (
+                    f'<div class="section"><div class="section-title">groundtruth output</div>'
+                    f'{gt_viz}'
+                    f'<details style="margin-top:6px"><summary class="small" '
+                    f'style="cursor:pointer;color:var(--muted);font-size:11px">raw JSON</summary>'
+                    f'<pre class="gt-output">{html.escape(gt_output_str)}</pre></details>'
+                    f'</div>'
+                )
+            else:
+                output_section = (
+                    f'<div class="section"><div class="section-title">groundtruth output</div>'
+                    f'<pre class="gt-output">{html.escape(gt_output_str)}</pre></div>'
+                )
+
+            atom_dom_id = "atom-" + _safe_id_for_hash(aid)
             parts.append(
-                f'<details class="atom" '
+                f'<details class="atom" id="{html.escape(atom_dom_id)}" '
                 f'data-ds="{html.escape(ds_label)}" '
                 f'data-bk="{html.escape(bucket)}" '
+                f'data-tv="{tv_for_sort}" '
+                f'data-aid="{html.escape(aid)}" '
                 f'data-search="{html.escape(search_haystack, quote=True)}">'
                 f'<summary>'
                 f'<span class="aid">{html.escape(aid)}</span>'
@@ -468,11 +672,8 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
                 f'</summary>'
                 f'<div class="body">'
                 f'<div class="section"><div class="section-title">prompt</div>{prompt_html}</div>'
-                f'<div class="section"><div class="section-title">groundtruth code</div>'
-                f'<pre>{gt_code}</pre></div>'
-                f'<div class="section"><div class="section-title">groundtruth output</div>'
-                f'<pre class="gt-output">{gt_output_html}</pre></div>'
-                f'{_render_run(scored_rec)}'
+                f'{code_section}'
+                f'{output_section}'
                 f'</div>'
                 f'</details>'
             )
