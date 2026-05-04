@@ -24,9 +24,10 @@ These need a reader, not a regex.
 Each modification round (prompt change, GT change, harness change) followed by:
 
 1. **Re-render** the atoms HTML so the modified state is browsable.
-2. **Subagent review pass** (`scripts/review_atoms_via_agents.py` or manual
-   `Agent` calls) — at minimum a stratified sample per dataset, focused on
-   atoms where the most recent run hit shape-mm, val-, or fail.
+2. **Subagent review pass** (manual `Agent` calls, one per dataset, run
+   in parallel). Reviews **every atom** in the dataset — no sampling.
+   Pin `model: "sonnet"` to keep cost reasonable; reviewers don't need
+   Opus-grade reasoning to read prompts and flag issues.
 3. **Findings file** at `data/review/<round>-<dataset>.jsonl` with one row
    per flagged atom: `{id, category, severity, finding, suggested_action}`.
 4. **Triage**: I read findings, decide which are real issues, which are
@@ -56,6 +57,11 @@ Severity:
 
 ## Anti-patterns to avoid
 
+- **Don't sample.** "Review 25 of 119" is the lazy default we're trying
+  to escape. The whole point is full coverage; if it's too slow,
+  parallelize across more agents instead of cutting the count.
+- **Don't inherit Opus.** Subagents inherit the parent model unless
+  pinned. For routine reading-and-flagging, set `model: "sonnet"`.
 - **Don't act on subagent findings without reading them.** They are
   recommendations, not commands. Each finding is one judgment call by one
   reader; some will be wrong.
