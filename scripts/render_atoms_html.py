@@ -238,6 +238,47 @@ pre {
   font-variant-numeric: tabular-nums;
 }
 .atom.is-target { box-shadow: 0 0 0 2px var(--accent); }
+.group {
+  margin-top: 14px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card); overflow: hidden;
+}
+.group:first-of-type { margin-top: 0; }
+.group > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; font-size: 13px;
+  position: sticky; top: 92px; background: var(--card); z-index: 5;
+  border-bottom: 1px solid var(--border);
+}
+.group:not([open]) > summary { border-bottom: 0; }
+.group > summary::-webkit-details-marker { display: none; }
+.group > summary::before {
+  content: "▸"; color: var(--muted); font-size: 10px; flex-shrink: 0;
+}
+.group[open] > summary::before { content: "▾"; }
+.group .group-name {
+  font-weight: 600; flex: 0 0 auto;
+}
+.group .group-ds {
+  background: #eef4fb; color: #134c80;
+  font-size: 10.5px; font-weight: 500;
+  padding: 1px 6px; border-radius: 3px;
+}
+.group .group-count { color: var(--muted); font-size: 11.5px; }
+.group .group-bar {
+  flex: 1; display: flex; height: 10px; max-width: 320px;
+  background: #efefee; border-radius: 2px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.group .group-bar > span { display: block; }
+.group .group-bar .b-good { background: #6cbf91; }
+.group .group-bar .b-warn { background: #e6a849; }
+.group .group-bar .b-bad  { background: #d97171; }
+.group .group-bar .b-muted { background: #d4d4d2; }
+.group .group-tail { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.group-body { padding: 4px 6px 6px; }
+.group .atom { margin: 4px 0; }
 .runs-toolbar {
   display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;
 }
@@ -303,10 +344,13 @@ function activeSet(pills, attr) {
   for (const p of pills) if (p.classList.contains('active')) set.add(p.dataset[attr]);
   return set;
 }
+const groups = Array.from(document.querySelectorAll('.group'));
+
 function applyFilter() {
   const q = search.value.trim().toLowerCase();
   const ds = activeSet(dsPills, 'ds');
   const bk = activeSet(bkPills, 'bk');
+  const isFiltering = q !== '' || ds.size > 0 || bk.size > 0;
   let visible = 0;
   for (const a of atoms) {
     const okDs = ds.size === 0 || ds.has(a.dataset.ds);
@@ -315,6 +359,12 @@ function applyFilter() {
     const show = okDs && okBk && okQ;
     a.style.display = show ? '' : 'none';
     if (show) visible++;
+  }
+  // Hide groups with no matches; auto-expand groups with matches when filtering.
+  for (const g of groups) {
+    const matched = g.querySelectorAll('.atom:not([style*="display: none"])').length;
+    g.style.display = (matched === 0 && isFiltering) ? 'none' : '';
+    if (isFiltering) g.open = matched > 0;
   }
   visibleCount.textContent = visible;
   emptyMsg.style.display = visible === 0 ? '' : 'none';
@@ -361,6 +411,9 @@ function focusFromHash() {
   if (!t) return;
   for (const a of atoms) a.classList.remove('is-target');
   t.classList.add('is-target');
+  // Open enclosing group so the atom is visible.
+  const parentGroup = t.closest('.group');
+  if (parentGroup) parentGroup.open = true;
   t.open = true;
   t.scrollIntoView({block: 'start'});
 }
@@ -409,6 +462,13 @@ document.addEventListener('keydown', e => {
     const i = currentIndex(list);
     if (i >= 0) list[i].open = !list[i].open;
   }
+});
+
+document.getElementById('expand-all').addEventListener('click', () => {
+  for (const g of groups) g.open = true;
+});
+document.getElementById('collapse-all').addEventListener('click', () => {
+  for (const g of groups) g.open = false;
 });
 
 // Per-atom run picker: clicking a run pill swaps which generated-code panel is visible.
@@ -518,6 +578,31 @@ def _render_distribution_viz(d: dict, max_rows: int = 12) -> str | None:
     suffix = (f'<div class="dist-row"><span class="lab" style="color:var(--muted)">'
               f'… {len(d["support"]) - max_rows} more</span></div>') if truncated else ""
     return '<div class="dist-viz">' + "".join(rows) + suffix + '</div>'
+
+
+def _group_key(atom: dict, ds_label: str) -> str:
+    """Group atoms by source-file basename (or by atom-id prefix if no source)."""
+    src = atom.get("source") or ""
+    if src:
+        # data/sources/probmods2/chapters/social-cognition.md -> social-cognition
+        # forestdb.org/models/2025-problang-politeness.md     -> 2025-problang-politeness
+        stem = src.rsplit("/", 1)[-1]
+        if stem.endswith(".md"):
+            stem = stem[:-3]
+        return stem
+    aid = atom["id"]
+    return aid.split("/", 1)[0] if "/" in aid else aid
+
+
+def _bar_segment_class(bucket: str) -> str:
+    """CSS class for the proportion bar showing per-group bucket distribution."""
+    if bucket in ("TV=0", "TV<.05", "val+"):
+        return "b-good"
+    if bucket in ("TV<.5", "TV<1"):
+        return "b-warn"
+    if bucket in ("TV=1", "val-", "shape!", "fail"):
+        return "b-bad"
+    return "b-muted"
 
 
 def _short_metric(scored_rec: dict | None) -> str:
@@ -640,6 +725,9 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict[str, dict]]]]) ->
         f'{ds_pills}'
         '<span class="label" style="margin-left:12px">bucket</span>'
         f'{bk_pills}'
+        '<button id="expand-all" class="pill" type="button" '
+        'style="margin-left:8px">expand all</button>'
+        '<button id="collapse-all" class="pill" type="button">collapse all</button>'
         '<select id="sort" style="margin-left:8px;padding:4px 8px;border:1px solid var(--border);'
         'border-radius:4px;font-size:12px;background:#fff">'
         '<option value="aid">sort: id</option>'
@@ -657,145 +745,182 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict[str, dict]]]]) ->
 
     for ds_label, atoms, runs_for_ds in grouped:
         primary_name = _primary_run_for(ds_label, runs_for_ds)
+        # Group by source (file/chapter) within this dataset.
+        groups: dict[str, list[dict]] = {}
         for atom in atoms:
-            aid = atom["id"]
-            shape_str = _shape_label(atom.get("answer_shape", ""))
-            src = atom.get("source", "")
+            groups.setdefault(_group_key(atom, ds_label), []).append(atom)
 
-            # Collect every run that scored this atom.
-            atom_runs: list[tuple[str, dict]] = [
-                (rn, recs[aid]) for rn, recs in runs_for_ds.items() if aid in recs
-            ]
-
-            # Primary run drives the row-level badge / bucket / TV.
-            primary_rec = runs_for_ds.get(primary_name, {}).get(aid) if primary_name else None
-            if primary_rec is None and atom_runs:
-                primary_rec = atom_runs[0][1]
-            bucket = bucket_for(primary_rec)
-            metric_short = _short_metric(primary_rec)
-
-            prompt_html = _render_prompt(atom.get("prompt", ""))
-            gt_code = atom.get("groundtruth_code", "")
-            gt_output = atom.get("groundtruth_output")
-            gt_output_str = json.dumps(gt_output, indent=2) if gt_output is not None else "(not cached)"
-            gt_output_str = _truncate(gt_output_str, 4000)
-
-            search_haystack = " ".join([
-                aid, src, ds_label, shape_str, str(atom.get("eval_mode", "")),
-                atom.get("prompt", "")[:1000],
-            ]).lower()
-
-            metric_badge = (f'<span class="badge tv">{html.escape(metric_short)}</span>'
-                            if metric_short else "")
-            bucket_badge = (
-                f'<span class="badge bucket {bucket_class(bucket)}">{html.escape(bucket)}</span>'
+        for group_key in sorted(groups):
+            grp_atoms = groups[group_key]
+            # Per-group bucket distribution → tiny color bar in the header.
+            grp_buckets = [bucket_for(runs_for_ds.get(primary_name, {}).get(a["id"]))
+                           for a in grp_atoms] if primary_name else []
+            seg_counts: dict[str, int] = {}
+            for b in grp_buckets:
+                cls = _bar_segment_class(b)
+                seg_counts[cls] = seg_counts.get(cls, 0) + 1
+            total_grp = max(1, len(grp_atoms))
+            bar_segments = "".join(
+                f'<span class="{cls}" style="flex:{seg_counts.get(cls, 0)}"></span>'
+                for cls in ("b-good", "b-warn", "b-bad", "b-muted")
+                if seg_counts.get(cls, 0) > 0
             )
-            run_count_badge = (
-                f'<span class="badge" title="{len(atom_runs)} run(s) scored this atom">'
-                f'{len(atom_runs)} run{"s" if len(atom_runs) != 1 else ""}</span>'
-                if len(atom_runs) > 1 else ""
-            )
+            n_good = seg_counts.get("b-good", 0)
+            n_bad = seg_counts.get("b-bad", 0)
+            tail = f'{n_good}✓ · {n_bad}✗' if (n_good or n_bad) else f'{len(grp_atoms)}'
 
-            # Sort key: TV of primary run for sort-by-tv option.
-            tv_for_sort = ""
-            if primary_rec is not None:
-                metrics = (primary_rec.get("evaluation", {}) or {}).get("metrics") or {}
-                tvs = [v for k, v in metrics.items() if k.endswith("tv")]
-                if tvs:
-                    tv_for_sort = f"{max(tvs):.6f}"
-
-            # Build the per-run code panels (one hidden div per run; toolbar swaps).
-            primary_run_name_for_atom = (
-                primary_name if (primary_name and primary_name in runs_for_ds and aid in runs_for_ds[primary_name])
-                else (atom_runs[0][0] if atom_runs else None)
+            parts.append(
+                f'<details class="group" data-ds="{html.escape(ds_label)}" '
+                f'data-key="{html.escape(group_key)}">'
+                f'<summary>'
+                f'<span class="group-ds">{html.escape(ds_label)}</span>'
+                f'<span class="group-name">{html.escape(group_key)}</span>'
+                f'<span class="group-count">{len(grp_atoms)} atom{"s" if len(grp_atoms)!=1 else ""}</span>'
+                f'<span class="group-bar">{bar_segments}</span>'
+                f'<span class="group-tail">{tail}</span>'
+                f'</summary>'
+                f'<div class="group-body">'
             )
-            if atom_runs:
-                run_pills = []
-                run_panels = []
-                for run_name, rec in atom_runs:
-                    rb = bucket_for(rec)
-                    is_active = (run_name == primary_run_name_for_atom)
-                    run_pills.append(
-                        f'<span class="run-pill {bucket_class(rb)}'
-                        + (" active" if is_active else "")
-                        + f'" data-run="{html.escape(run_name)}">'
-                        f'{html.escape(run_name)} '
-                        f'<span class="run-pill-bk">{html.escape(rb)}</span>'
-                        f'</span>'
-                    )
-                    code = _gen_code(rec) or ""
-                    err = _gen_error(rec)
-                    err_pre = (f'<pre class="err">{html.escape(str(err)[:600])}</pre>'
-                               if err else '')
-                    run_panels.append(
-                        f'<div class="run-panel'
-                        + (' active' if is_active else '')
-                        + f'" data-run="{html.escape(run_name)}">'
-                        f'{err_pre}'
-                        f'<pre>{html.escape(code)}</pre>'
-                        f'</div>'
-                    )
-                runs_toolbar = (
-                    f'<div class="runs-toolbar">{"".join(run_pills)}</div>'
+            for atom in grp_atoms:
+                aid = atom["id"]
+                shape_str = _shape_label(atom.get("answer_shape", ""))
+                src = atom.get("source", "")
+
+                # Collect every run that scored this atom.
+                atom_runs: list[tuple[str, dict]] = [
+                    (rn, recs[aid]) for rn, recs in runs_for_ds.items() if aid in recs
+                ]
+
+                # Primary run drives the row-level badge / bucket / TV.
+                primary_rec = runs_for_ds.get(primary_name, {}).get(aid) if primary_name else None
+                if primary_rec is None and atom_runs:
+                    primary_rec = atom_runs[0][1]
+                bucket = bucket_for(primary_rec)
+                metric_short = _short_metric(primary_rec)
+
+                prompt_html = _render_prompt(atom.get("prompt", ""))
+                gt_code = atom.get("groundtruth_code", "")
+                gt_output = atom.get("groundtruth_output")
+                gt_output_str = json.dumps(gt_output, indent=2) if gt_output is not None else "(not cached)"
+                gt_output_str = _truncate(gt_output_str, 4000)
+
+                search_haystack = " ".join([
+                    aid, src, ds_label, shape_str, str(atom.get("eval_mode", "")),
+                    atom.get("prompt", "")[:1000],
+                ]).lower()
+
+                metric_badge = (f'<span class="badge tv">{html.escape(metric_short)}</span>'
+                                if metric_short else "")
+                bucket_badge = (
+                    f'<span class="badge bucket {bucket_class(bucket)}">{html.escape(bucket)}</span>'
+                )
+                run_count_badge = (
+                    f'<span class="badge" title="{len(atom_runs)} run(s) scored this atom">'
+                    f'{len(atom_runs)} run{"s" if len(atom_runs) != 1 else ""}</span>'
                     if len(atom_runs) > 1 else ""
                 )
-                code_section = (
-                    f'<div class="section"><div class="code-pair">'
-                    f'<div><div class="section-title">groundtruth code</div>'
-                    f'<pre>{html.escape(gt_code)}</pre></div>'
-                    f'<div><div class="section-title">generated code</div>'
-                    f'{runs_toolbar}'
-                    f'<div class="run-panels">{"".join(run_panels)}</div>'
-                    f'</div>'
-                    f'</div></div>'
-                )
-            else:
-                code_section = (
-                    f'<div class="section"><div class="section-title">groundtruth code</div>'
-                    f'<pre>{html.escape(gt_code)}</pre></div>'
-                )
 
-            # GT output: distribution-shape gets the bar chart, plus collapsible JSON
-            gt_viz = _render_distribution_viz(gt_output) if isinstance(gt_output, dict) else None
-            if gt_viz:
-                output_section = (
-                    f'<div class="section"><div class="section-title">groundtruth output</div>'
-                    f'{gt_viz}'
-                    f'<details style="margin-top:6px"><summary class="small" '
-                    f'style="cursor:pointer;color:var(--muted);font-size:11px">raw JSON</summary>'
-                    f'<pre class="gt-output">{html.escape(gt_output_str)}</pre></details>'
-                    f'</div>'
-                )
-            else:
-                output_section = (
-                    f'<div class="section"><div class="section-title">groundtruth output</div>'
-                    f'<pre class="gt-output">{html.escape(gt_output_str)}</pre></div>'
-                )
+                # Sort key: TV of primary run for sort-by-tv option.
+                tv_for_sort = ""
+                if primary_rec is not None:
+                    metrics = (primary_rec.get("evaluation", {}) or {}).get("metrics") or {}
+                    tvs = [v for k, v in metrics.items() if k.endswith("tv")]
+                    if tvs:
+                        tv_for_sort = f"{max(tvs):.6f}"
 
-            atom_dom_id = "atom-" + _safe_id_for_hash(aid)
-            parts.append(
-                f'<details class="atom" id="{html.escape(atom_dom_id)}" '
-                f'data-ds="{html.escape(ds_label)}" '
-                f'data-bk="{html.escape(bucket)}" '
-                f'data-tv="{tv_for_sort}" '
-                f'data-aid="{html.escape(aid)}" '
-                f'data-search="{html.escape(search_haystack, quote=True)}">'
-                f'<summary>'
-                f'<span class="aid">{html.escape(aid)}</span>'
-                f'<span class="meta">'
-                f'<span class="badge ds">{html.escape(ds_label)}</span>'
-                f'<span class="badge shape">{html.escape(shape_str)}</span>'
-                f'{run_count_badge}'
-                f'{metric_badge}{bucket_badge}'
-                f'</span>'
-                f'</summary>'
-                f'<div class="body">'
-                f'<div class="section"><div class="section-title">prompt</div>{prompt_html}</div>'
-                f'{code_section}'
-                f'{output_section}'
-                f'</div>'
-                f'</details>'
-            )
+                # Build the per-run code panels (one hidden div per run; toolbar swaps).
+                primary_run_name_for_atom = (
+                    primary_name if (primary_name and primary_name in runs_for_ds and aid in runs_for_ds[primary_name])
+                    else (atom_runs[0][0] if atom_runs else None)
+                )
+                if atom_runs:
+                    run_pills = []
+                    run_panels = []
+                    for run_name, rec in atom_runs:
+                        rb = bucket_for(rec)
+                        is_active = (run_name == primary_run_name_for_atom)
+                        run_pills.append(
+                            f'<span class="run-pill {bucket_class(rb)}'
+                            + (" active" if is_active else "")
+                            + f'" data-run="{html.escape(run_name)}">'
+                            f'{html.escape(run_name)} '
+                            f'<span class="run-pill-bk">{html.escape(rb)}</span>'
+                            f'</span>'
+                        )
+                        code = _gen_code(rec) or ""
+                        err = _gen_error(rec)
+                        err_pre = (f'<pre class="err">{html.escape(str(err)[:600])}</pre>'
+                                   if err else '')
+                        run_panels.append(
+                            f'<div class="run-panel'
+                            + (' active' if is_active else '')
+                            + f'" data-run="{html.escape(run_name)}">'
+                            f'{err_pre}'
+                            f'<pre>{html.escape(code)}</pre>'
+                            f'</div>'
+                        )
+                    runs_toolbar = (
+                        f'<div class="runs-toolbar">{"".join(run_pills)}</div>'
+                        if len(atom_runs) > 1 else ""
+                    )
+                    code_section = (
+                        f'<div class="section"><div class="code-pair">'
+                        f'<div><div class="section-title">groundtruth code</div>'
+                        f'<pre>{html.escape(gt_code)}</pre></div>'
+                        f'<div><div class="section-title">generated code</div>'
+                        f'{runs_toolbar}'
+                        f'<div class="run-panels">{"".join(run_panels)}</div>'
+                        f'</div>'
+                        f'</div></div>'
+                    )
+                else:
+                    code_section = (
+                        f'<div class="section"><div class="section-title">groundtruth code</div>'
+                        f'<pre>{html.escape(gt_code)}</pre></div>'
+                    )
+
+                # GT output: distribution-shape gets the bar chart, plus collapsible JSON
+                gt_viz = _render_distribution_viz(gt_output) if isinstance(gt_output, dict) else None
+                if gt_viz:
+                    output_section = (
+                        f'<div class="section"><div class="section-title">groundtruth output</div>'
+                        f'{gt_viz}'
+                        f'<details style="margin-top:6px"><summary class="small" '
+                        f'style="cursor:pointer;color:var(--muted);font-size:11px">raw JSON</summary>'
+                        f'<pre class="gt-output">{html.escape(gt_output_str)}</pre></details>'
+                        f'</div>'
+                    )
+                else:
+                    output_section = (
+                        f'<div class="section"><div class="section-title">groundtruth output</div>'
+                        f'<pre class="gt-output">{html.escape(gt_output_str)}</pre></div>'
+                    )
+
+                atom_dom_id = "atom-" + _safe_id_for_hash(aid)
+                parts.append(
+                    f'<details class="atom" id="{html.escape(atom_dom_id)}" '
+                    f'data-ds="{html.escape(ds_label)}" '
+                    f'data-bk="{html.escape(bucket)}" '
+                    f'data-tv="{tv_for_sort}" '
+                    f'data-aid="{html.escape(aid)}" '
+                    f'data-search="{html.escape(search_haystack, quote=True)}">'
+                    f'<summary>'
+                    f'<span class="aid">{html.escape(aid)}</span>'
+                    f'<span class="meta">'
+                    f'<span class="badge ds">{html.escape(ds_label)}</span>'
+                    f'<span class="badge shape">{html.escape(shape_str)}</span>'
+                    f'{run_count_badge}'
+                    f'{metric_badge}{bucket_badge}'
+                    f'</span>'
+                    f'</summary>'
+                    f'<div class="body">'
+                    f'<div class="section"><div class="section-title">prompt</div>{prompt_html}</div>'
+                    f'{code_section}'
+                    f'{output_section}'
+                    f'</div>'
+                    f'</details>'
+                )
+            parts.append('</div></details>')  # close group-body + group (one per group)
 
     parts.append('</main>')
     parts.append(TAIL)
