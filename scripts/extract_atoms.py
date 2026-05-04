@@ -235,25 +235,44 @@ def classify_answer(answer) -> tuple[str, object]:
 
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE | re.DOTALL)
 _DATA_URI_RE = re.compile(r"data:image/[a-z]+;base64,[A-Za-z0-9+/=\s]+", re.IGNORECASE)
-# Jekyll plugin syntax used in problang sources for citations:
-# `reft:bergenetal2016`, `reft:QingFranke2013:Variations-on-a`, etc.
-# The plugin renders these to proper citations; we strip them since
-# they're meaningless to the LLM as raw tokens.
+# Closed HTML comments. Note: prose can be truncated mid-comment by
+# `truncate_prose`, leaving an unclosed `<!--`; we strip those too.
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_HTML_COMMENT_OPEN_RE = re.compile(r"<!--[\s\S]*$")
+# Jekyll Liquid templates: `{% include %}`, `{{ site.baseurl }}`. The
+# plugin renders these to URLs / partials; raw they're noise.
+_LIQUID_BLOCK_RE = re.compile(r"\{%[\s\S]*?%\}")
+_LIQUID_VAR_RE = re.compile(r"\{\{[^}]*\}\}")
+# Citation tokens — both Jekyll plugin syntax (problang) and Pandoc
+# bracket-free citations (probmods).
 _REFT_RE = re.compile(r"\breft:[A-Za-z0-9_:-]+")
+_PANDOC_CITE_RE = re.compile(r"@[A-Z][A-Za-z]+\d{4}\w*")
+# Cross-chapter markdown links `[Chapter 2](02-pragmatics.html)`. The
+# referenced page isn't in our context, so we drop the URL and keep
+# only the visible link text.
+# Match `[text](path/file.html)`, `[text](file.html#anchor)`,
+# `[text](/foo/bar.html#anchor)` — local relative-path markdown links.
+# Excludes http:// / https:// (we leave external URLs alone).
+_CHAPTER_LINK_RE = re.compile(r"\[([^\]]+)\]\((?!https?:)[^)]*?\.html(?:#[^)]*)?\)")
+# Wiki-style cross-chapter links `[[Section Title#anchor|display]]` or
+# `[[plain]]`. Use the post-pipe text if present, else the inner.
+_WIKI_LINK_RE = re.compile(r"\[\[([^|\]]+)(?:\|([^\]]+))?\]\]")
 
 
 def sanitize_prose(prose: str) -> str:
-    """Strip <img> tags, inline base64 image URIs, and unresolved
-    Jekyll `reft:KEY` citation markers from prose.
-
-    Source markdown sometimes inlines screenshots as `<img src="data:..."
-    base64-blob`, which can balloon a prompt to 100+ KB of pixels with
-    zero useful prose for a code-generation task. We replace such tags
-    with a `[image]` marker so the surrounding prose still parses cleanly.
+    """Strip noise that rendered to nothing in the source toolchain but
+    leaks into our prompts as raw template/citation/comment syntax.
     """
     prose = _IMG_TAG_RE.sub("[image]", prose)
     prose = _DATA_URI_RE.sub("[image]", prose)
+    prose = _HTML_COMMENT_RE.sub("", prose)
+    prose = _HTML_COMMENT_OPEN_RE.sub("", prose)
+    prose = _LIQUID_BLOCK_RE.sub("", prose)
+    prose = _LIQUID_VAR_RE.sub("", prose)
     prose = _REFT_RE.sub("(citation)", prose)
+    prose = _PANDOC_CITE_RE.sub("(citation)", prose)
+    prose = _CHAPTER_LINK_RE.sub(lambda m: m.group(1), prose)
+    prose = _WIKI_LINK_RE.sub(lambda m: (m.group(2) or m.group(1)).strip(), prose)
     return prose
 
 
@@ -327,7 +346,6 @@ def build_atom(chapter_name: str, idx: int, prose: str, code: str,
         "eval_mode": mode,
         "answer_shape": shape,
         "prompt": (
-            f"From the {label} \"{chapter_name}\":\n\n"
             f"{prompt_prose}\n\n"
             f"{prefix_section}"
             f"Write a WebPPL program that demonstrates what the prose "
