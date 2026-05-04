@@ -235,10 +235,16 @@ def classify_answer(answer) -> tuple[str, object]:
 
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE | re.DOTALL)
 _DATA_URI_RE = re.compile(r"data:image/[a-z]+;base64,[A-Za-z0-9+/=\s]+", re.IGNORECASE)
+# Jekyll plugin syntax used in problang sources for citations:
+# `reft:bergenetal2016`, `reft:QingFranke2013:Variations-on-a`, etc.
+# The plugin renders these to proper citations; we strip them since
+# they're meaningless to the LLM as raw tokens.
+_REFT_RE = re.compile(r"\breft:[A-Za-z0-9_:-]+")
 
 
 def sanitize_prose(prose: str) -> str:
-    """Strip <img> tags and inline base64 image URIs from prose.
+    """Strip <img> tags, inline base64 image URIs, and unresolved
+    Jekyll `reft:KEY` citation markers from prose.
 
     Source markdown sometimes inlines screenshots as `<img src="data:..."
     base64-blob`, which can balloon a prompt to 100+ KB of pixels with
@@ -247,6 +253,7 @@ def sanitize_prose(prose: str) -> str:
     """
     prose = _IMG_TAG_RE.sub("[image]", prose)
     prose = _DATA_URI_RE.sub("[image]", prose)
+    prose = _REFT_RE.sub("(citation)", prose)
     return prose
 
 
@@ -324,9 +331,10 @@ def build_atom(chapter_name: str, idx: int, prose: str, code: str,
             f"{prompt_prose}\n\n"
             f"{prefix_section}"
             f"Write a WebPPL program that demonstrates what the prose "
-            f"asks for. You may rely on the given code above. End your "
-            f"program with `var ANSWER = <expression>;` where the value "
-            f"of ANSWER is {format_answer_shape_hint(shape)}."
+            f"asks for."
+            + (" You may rely on the given code above." if preamble else "")
+            + f" End your program with `var ANSWER = <expression>;` "
+            f"where the value of ANSWER is {format_answer_shape_hint(shape)}."
         ),
         "groundtruth_code": wrapped,
         "groundtruth_output": answer,
