@@ -26,14 +26,27 @@ from eval.io import iter_scored, load_jsonl
 
 
 # Default registry: which datasets to aggregate, with their run names.
-DATASETS: list[tuple[str, str, str]] = [
-    # (display label, dataset jsonl, scored.jsonl run name)
-    ("exercises", "data/atomized_v2.jsonl",                 "sonnet-46-primer-v3"),
-    ("chapters",  "data/atomized_probmods_chapters.jsonl",  "sonnet-46-primer-chapters"),
-    ("dippl",     "data/atomized_dippl.jsonl",              "sonnet-46-primer-dippl"),
-    ("forestdb",  "data/atomized_forestdb.jsonl",           "sonnet-46-primer-forestdb"),
-    ("problang",  "data/atomized_problang.jsonl",           "sonnet-46-primer-problang"),
+DATASETS: list[tuple[str, str]] = [
+    # (display label, dataset jsonl). All scored.jsonl files under
+    # data/eval_runs/ are auto-discovered and matched to atoms by id.
+    ("exercises", "data/atomized_v2.jsonl"),
+    ("chapters",  "data/atomized_probmods_chapters.jsonl"),
+    ("dippl",     "data/atomized_dippl.jsonl"),
+    ("forestdb",  "data/atomized_forestdb.jsonl"),
+    ("problang",  "data/atomized_problang.jsonl"),
 ]
+
+
+# Default "primary run" per dataset — drives the row-level bucket badge
+# and the per-atom default-active gen code panel. If absent, falls back
+# to the first available run that scored that atom.
+DEFAULT_PRIMARY = {
+    "exercises": "sonnet-46-primer-v3",
+    "chapters":  "sonnet-46-primer-chapters",
+    "dippl":     "sonnet-46-primer-dippl",
+    "forestdb":  "sonnet-46-primer-forestdb",
+    "problang":  "sonnet-46-primer-problang",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +238,26 @@ pre {
   font-variant-numeric: tabular-nums;
 }
 .atom.is-target { box-shadow: 0 0 0 2px var(--accent); }
+.runs-toolbar {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;
+}
+.run-pill {
+  font: 11px ui-monospace, Menlo, monospace;
+  border: 1px solid var(--border); background: #fff;
+  border-radius: 3px; padding: 2px 7px; cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.run-pill .run-pill-bk { color: var(--muted); font-size: 10.5px; }
+.run-pill.good { border-color: #b0d8c0; }
+.run-pill.warn { border-color: #e9c887; }
+.run-pill.bad  { border-color: #e7b7b7; }
+.run-pill.active {
+  background: var(--pill-active-bg); border-color: var(--pill-active);
+  color: var(--pill-active);
+}
+.run-pill.active .run-pill-bk { color: var(--pill-active); }
+.run-panel { display: none; }
+.run-panel.active { display: block; }
 .prompt-md {
   white-space: pre-wrap;
   font-size: 13px; line-height: 1.5;
@@ -378,6 +411,17 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// Per-atom run picker: clicking a run pill swaps which generated-code panel is visible.
+document.addEventListener('click', e => {
+  const pill = e.target.closest('.run-pill');
+  if (!pill) return;
+  const atom = pill.closest('.atom');
+  if (!atom) return;
+  const target = pill.dataset.run;
+  for (const p of atom.querySelectorAll('.run-pill')) p.classList.toggle('active', p.dataset.run === target);
+  for (const p of atom.querySelectorAll('.run-panel')) p.classList.toggle('active', p.dataset.run === target);
+});
+
 focusFromHash();
 </script>
 </body>
@@ -515,23 +559,51 @@ def _load_run(runs_dir: Path, run_name: str) -> dict[str, dict]:
     return {rec["id"]: rec for rec in iter_scored(scored)}
 
 
+def _primary_run_for(ds_label: str, runs_for_ds: dict[str, dict[str, dict]]) -> str | None:
+    """Pick the primary run for a dataset (drives row badge + default-active code panel)."""
+    if not runs_for_ds:
+        return None
+    pref = DEFAULT_PRIMARY.get(ds_label)
+    if pref and pref in runs_for_ds:
+        return pref
+    return next(iter(runs_for_ds))
+
+
+def _discover_runs(runs_dir: Path) -> dict[str, dict[str, dict]]:
+    """Return {run_name: {atom_id: scored_rec}} for every run under runs_dir."""
+    out: dict[str, dict[str, dict]] = {}
+    if not runs_dir.exists():
+        return out
+    for sub in sorted(runs_dir.iterdir()):
+        if not sub.is_dir():
+            continue
+        rec_by_id = _load_run(runs_dir, sub.name)
+        if rec_by_id:
+            out[sub.name] = rec_by_id
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Render
 # ---------------------------------------------------------------------------
 
-def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
-    """grouped: list of (dataset_label, atoms, scored_by_id)."""
+def render(grouped: list[tuple[str, list[dict], dict[str, dict[str, dict]]]]) -> str:
+    """grouped: list of (dataset_label, atoms, runs_for_this_dataset)
+    where runs_for_this_dataset is {run_name: {atom_id: scored_rec}}.
+    """
     parts = [HEAD]
 
-    # Compute per-dataset and per-bucket counts.
+    # Compute per-dataset and per-bucket counts using each dataset's primary run.
     ds_counts = {}
     bucket_counts = {label: 0 for label, *_ in BUCKETS}
     total = 0
-    for ds_label, atoms, scored_by_id in grouped:
+    for ds_label, atoms, runs_for_ds in grouped:
         ds_counts[ds_label] = len(atoms)
         total += len(atoms)
+        primary_name = _primary_run_for(ds_label, runs_for_ds)
+        primary_run = runs_for_ds.get(primary_name, {}) if primary_name else {}
         for atom in atoms:
-            b = bucket_for(scored_by_id.get(atom["id"]))
+            b = bucket_for(primary_run.get(atom["id"]))
             bucket_counts[b] = bucket_counts.get(b, 0) + 1
 
     scoreable = sum(c for b, c in bucket_counts.items()
@@ -547,7 +619,7 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
         f'<span class="pill" data-ds="{html.escape(label)}">'
         f'{html.escape(label)} <span class="count">{ds_counts[label]}</span>'
         f'</span>'
-        for label, _ds, _run in DATASETS
+        for label, _ds in DATASETS
         if label in ds_counts
     )
     bk_pills = " ".join(
@@ -583,23 +655,30 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
     parts.append('<main>')
     parts.append('<div id="empty-msg" class="empty" style="display:none">No atoms match the current filter.</div>')
 
-    for ds_label, atoms, scored_by_id in grouped:
+    for ds_label, atoms, runs_for_ds in grouped:
+        primary_name = _primary_run_for(ds_label, runs_for_ds)
         for atom in atoms:
             aid = atom["id"]
             shape_str = _shape_label(atom.get("answer_shape", ""))
             src = atom.get("source", "")
-            scored_rec = scored_by_id.get(aid)
-            bucket = bucket_for(scored_rec)
-            metric_short = _short_metric(scored_rec)
+
+            # Collect every run that scored this atom.
+            atom_runs: list[tuple[str, dict]] = [
+                (rn, recs[aid]) for rn, recs in runs_for_ds.items() if aid in recs
+            ]
+
+            # Primary run drives the row-level badge / bucket / TV.
+            primary_rec = runs_for_ds.get(primary_name, {}).get(aid) if primary_name else None
+            if primary_rec is None and atom_runs:
+                primary_rec = atom_runs[0][1]
+            bucket = bucket_for(primary_rec)
+            metric_short = _short_metric(primary_rec)
 
             prompt_html = _render_prompt(atom.get("prompt", ""))
             gt_code = atom.get("groundtruth_code", "")
             gt_output = atom.get("groundtruth_output")
             gt_output_str = json.dumps(gt_output, indent=2) if gt_output is not None else "(not cached)"
             gt_output_str = _truncate(gt_output_str, 4000)
-
-            gen_code = _gen_code(scored_rec)
-            gen_err = _gen_error(scored_rec)
 
             search_haystack = " ".join([
                 aid, src, ds_label, shape_str, str(atom.get("eval_mode", "")),
@@ -611,24 +690,63 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
             bucket_badge = (
                 f'<span class="badge bucket {bucket_class(bucket)}">{html.escape(bucket)}</span>'
             )
+            run_count_badge = (
+                f'<span class="badge" title="{len(atom_runs)} run(s) scored this atom">'
+                f'{len(atom_runs)} run{"s" if len(atom_runs) != 1 else ""}</span>'
+                if len(atom_runs) > 1 else ""
+            )
 
-            # Sort key: TV value (or sentinel) for sort-by-tv option
+            # Sort key: TV of primary run for sort-by-tv option.
             tv_for_sort = ""
-            if scored_rec is not None:
-                metrics = (scored_rec.get("evaluation", {}) or {}).get("metrics") or {}
+            if primary_rec is not None:
+                metrics = (primary_rec.get("evaluation", {}) or {}).get("metrics") or {}
                 tvs = [v for k, v in metrics.items() if k.endswith("tv")]
                 if tvs:
                     tv_for_sort = f"{max(tvs):.6f}"
 
-            # Side-by-side GT vs gen code
-            if gen_code is not None:
+            # Build the per-run code panels (one hidden div per run; toolbar swaps).
+            primary_run_name_for_atom = (
+                primary_name if (primary_name and primary_name in runs_for_ds and aid in runs_for_ds[primary_name])
+                else (atom_runs[0][0] if atom_runs else None)
+            )
+            if atom_runs:
+                run_pills = []
+                run_panels = []
+                for run_name, rec in atom_runs:
+                    rb = bucket_for(rec)
+                    is_active = (run_name == primary_run_name_for_atom)
+                    run_pills.append(
+                        f'<span class="run-pill {bucket_class(rb)}'
+                        + (" active" if is_active else "")
+                        + f'" data-run="{html.escape(run_name)}">'
+                        f'{html.escape(run_name)} '
+                        f'<span class="run-pill-bk">{html.escape(rb)}</span>'
+                        f'</span>'
+                    )
+                    code = _gen_code(rec) or ""
+                    err = _gen_error(rec)
+                    err_pre = (f'<pre class="err">{html.escape(str(err)[:600])}</pre>'
+                               if err else '')
+                    run_panels.append(
+                        f'<div class="run-panel'
+                        + (' active' if is_active else '')
+                        + f'" data-run="{html.escape(run_name)}">'
+                        f'{err_pre}'
+                        f'<pre>{html.escape(code)}</pre>'
+                        f'</div>'
+                    )
+                runs_toolbar = (
+                    f'<div class="runs-toolbar">{"".join(run_pills)}</div>'
+                    if len(atom_runs) > 1 else ""
+                )
                 code_section = (
                     f'<div class="section"><div class="code-pair">'
                     f'<div><div class="section-title">groundtruth code</div>'
                     f'<pre>{html.escape(gt_code)}</pre></div>'
                     f'<div><div class="section-title">generated code</div>'
-                    + (f'<pre class="err">{html.escape(str(gen_err)[:600])}</pre>' if gen_err else '')
-                    + f'<pre>{html.escape(gen_code)}</pre></div>'
+                    f'{runs_toolbar}'
+                    f'<div class="run-panels">{"".join(run_panels)}</div>'
+                    f'</div>'
                     f'</div></div>'
                 )
             else:
@@ -667,6 +785,7 @@ def render(grouped: list[tuple[str, list[dict], dict[str, dict]]]) -> str:
                 f'<span class="meta">'
                 f'<span class="badge ds">{html.escape(ds_label)}</span>'
                 f'<span class="badge shape">{html.escape(shape_str)}</span>'
+                f'{run_count_badge}'
                 f'{metric_badge}{bucket_badge}'
                 f'</span>'
                 f'</summary>'
@@ -690,20 +809,31 @@ def main():
     args = p.parse_args()
 
     runs_dir = Path(args.runs_dir)
-    grouped: list[tuple[str, list[dict], dict[str, dict]]] = []
+    all_runs = _discover_runs(runs_dir)
+
+    grouped: list[tuple[str, list[dict], dict[str, dict[str, dict]]]] = []
     total_atoms = 0
-    for label, ds_path, run_name in DATASETS:
+    total_runs = 0
+    for label, ds_path in DATASETS:
         ds = Path(ds_path)
         if not ds.exists():
             continue
         atoms = load_jsonl(ds)
-        scored_by_id = _load_run(runs_dir, run_name)
-        grouped.append((label, atoms, scored_by_id))
+        atom_ids = {a["id"] for a in atoms}
+        # Restrict to runs that actually scored at least one of this dataset's atoms.
+        runs_for_ds = {
+            run_name: {aid: rec for aid, rec in recs.items() if aid in atom_ids}
+            for run_name, recs in all_runs.items()
+        }
+        runs_for_ds = {rn: rs for rn, rs in runs_for_ds.items() if rs}
+        grouped.append((label, atoms, runs_for_ds))
         total_atoms += len(atoms)
+        total_runs += len(runs_for_ds)
 
     out = Path(args.output)
     out.write_text(render(grouped))
-    print(f"Wrote {total_atoms} atoms across {len(grouped)} datasets -> {out} ({out.stat().st_size:,} bytes)")
+    print(f"Wrote {total_atoms} atoms across {len(grouped)} datasets, "
+          f"{total_runs} run-mappings -> {out} ({out.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":
