@@ -86,6 +86,7 @@ _REQUIRE_PACKAGES = [
     _DEPS_DIR / "probmods-towdata",
     _DEPS_DIR / "probmods-physics",
     _DEPS_DIR / "probmods-draw",
+    _DEPS_DIR / "probmods-viz-stub",
 ]
 
 # Preload script overriding Math.random BEFORE webppl modules capture a ref.
