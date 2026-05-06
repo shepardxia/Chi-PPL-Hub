@@ -5,8 +5,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 
-# generated outputs
-data/atoms*.html
+# (generated HTML used to be ignored; now versioned alongside the dataset)
 
 # scraped third-party sources (kept locally; treat as deps)
 data/sources/
