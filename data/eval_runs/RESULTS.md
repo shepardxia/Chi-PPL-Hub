@@ -14,13 +14,10 @@ Each model + config × the full v2 dataset. Generation via Anthropic batch API; 
 | `sonnet-46-think-noprimer` | 34 | 9 | 8 | 9 | 4 | 4 | 1 | 0 | 7 |
 | `sonnet-46-think-primer` | 40 | 8 | 9 | 8 | 4 | 3 | 3 | 1 | 0 |
 
-Bucket definitions:
-- `TV=0` / `TV<.05`: distribution match (TV is the worst sub-metric for record-shape atoms)
-- `TV<.5` / `TV<1`: partial distribution match
-- `TV=1`: full disagreement on a distribution
-- `val+` / `val-`: value-shape atom matched / not matched
-- `shape!`: returned the wrong shape (e.g. distribution where a value was expected)
-- `fail`: program failed to execute
+A "value" atom is one whose answer is a single deterministic number / string /
+boolean or a small structured tuple — anything where exact equality (or
+near-equality) is the right comparison metric, as opposed to a probability
+distribution.
 
 ## Aggregate metrics per config
 
