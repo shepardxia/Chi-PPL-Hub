@@ -248,7 +248,7 @@ pre {
   cursor: pointer; list-style: none; user-select: none;
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; font-size: 13px;
-  position: sticky; top: 92px; background: var(--card); z-index: 5;
+  background: var(--card);
   border-bottom: 1px solid var(--border);
 }
 .group:not([open]) > summary { border-bottom: 0; }
