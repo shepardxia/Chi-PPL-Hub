@@ -1,0 +1,87 @@
+[1/76] probmods2-conditioning/ex1.a                            executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[2/76] probmods2-conditioning/ex1.b                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[3/76] probmods2-conditioning/ex1.c                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[4/76] probmods2-conditioning/ex1.d                            executed=True, metrics={'kl': 3.2653618371328018e-18, 'tv': 1.1102230246251565e-16}
+[5/76] probmods2-conditioning/ex2.a                            executed=True, metrics={'original.kl': 0.0, 'original.tv': 0.0, 'intervention.kl': 0.0, 'intervention.tv': 0.0, 'conditioning.kl': 0.0, 'conditioning.tv': 0.0}
+[6/76] probmods2-conditioning/ex2.b                            executed=True, metrics={'original.kl': 0.0, 'original.tv': 0.0, 'intervention.kl': 0.0, 'intervention.tv': 0.0, 'conditioning.kl': 0.0, 'conditioning.tv': 0.0}
+[7/76] probmods2-conditioning/ex4.b                            executed=True, metrics={'kl': 0.05411052680942785, 'tv': 0.1169}
+[8/76] probmods2-conditioning/ex4.c                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[9/76] probmods2-conditioning/ex5.a                            executed=True, metrics={'rain.kl': -5.124106267500723e-17, 'rain.tv': 2.7755575615628914e-17, 'sprinkler.kl': 0.0, 'sprinkler.tv': 0.0}
+[10/76] probmods2-conditioning/ex5.b                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[11/76] probmods2-conditioning/ex5.c                            executed=True, metrics={'kl': 1.5090410043448726e-17, 'tv': 6.938893903907228e-18}
+[12/76] probmods2-conditioning/ex6.c                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[13/76] probmods2-conditioning/ex6.d                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[14/76] probmods2-bayesian-data-analysis/ex1.2                  executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[15/76] probmods2-conditional-dependence/ex1.a                  executed=True, metrics={'prior.kl': 0.0, 'prior.tv': 0.0, 'death.kl': 1.763220766707666e-11, 'death.tv': 2.938726267859293e-06, 'deathAndCold.kl': 2.0414993860920386e-10, 'deathAndCold.tv': 6.805194380621327e-06, 'deathAndNoCold.kl': -7.535026699147766e-17, 'deathAndNoCold.tv': 1.1105381208815351e-13}
+[16/76] probmods2-conditional-dependence/ex1.b                  executed=True, metrics={'prior.kl': 8.88178419700125e-17, 'prior.tv': 4.163336342344337e-17, 'death.kl': 6.89987259400499e-12, 'death.tv': 1.7633023769447753e-06, 'deathAndCancer.kl': 2.8798672427760843e-10, 'deathAndCancer.tv': 9.599859191466997e-06, 'deathAndNoCancer.kl': -4.6558907073906555e-17, 'deathAndNoCancer.tv': 6.663444210470992e-14}
+[17/76] probmods2-learning-as-conditional-inference/ex1.1       executed=True, metrics={'exact': 0.0, 'approx': 1.0}
+[18/76] probmods2-learning-as-conditional-inference/ex2.1       executed=True, metrics={'post.kl': 15.435844635987147, 'post.tv': 0.9999999999999685}
+[19/76] probmods2-learning-as-conditional-inference/ex2.2       executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[20/76] probmods2-mixture-models/ex1.a                          executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[21/76] probmods2-mixture-models/ex1.b                          executed=True, metrics={'kl': 17.854577644270037, 'tv': 0.9999999999999883}
+[22/76] probmods2-mixture-models/ex2.a                          executed=True, metrics={'kl': 19.555298649168616, 'tv': 0.9999999999999994}
+[23/76] probmods2-occams-razor/ex1.2                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[24/76] probmods2-occams-razor/ex1.3                            executed=True, metrics={'exact': 0.0, 'approx': 0.0}
+[25/76] probmods2-occams-razor/ex2.1                            executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[26/76] probmods2-occams-razor/ex2.2                            executed=True, metrics={'kl': 5.37849343800796, 'tv': 0.6665999999999653}
+[27/76] probmods2-occams-razor/ex2.3                            executed=True, metrics={'cpValues.exact': 0.0, 'cpValues.approx': 0.0, 'csValues.exact': 0.0, 'csValues.approx': 0.0}
+[28/76] probmods2-social-cognition/ex1.1                        executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[29/76] probmods2-social-cognition/ex1.2                        executed=True, metrics={'kl': 0.008217140699022851, 'tv': 0.06201550387596891}
+[30/76] probmods2-social-cognition/ex2.1                        executed=True, metrics={'stay.kl': 0.0, 'stay.tv': 0.0, 'switch.kl': 0.0, 'switch.tv': 0.0}
+[31/76] probmods2-social-cognition/ex2.2                        executed=True, metrics={'stay.kl': 0.0, 'stay.tv': 0.0, 'switch.kl': 0.0, 'switch.tv': 0.0}
+[32/76] probmods2-social-cognition/ex2.4                        executed=True, metrics={'stay.kl': 0.0, 'stay.tv': 0.0, 'switch.kl': 0.0, 'switch.tv': 0.0}
+[33/76] probmods2-social-cognition/ex2.5                        executed=True, metrics={'stay.kl': 0.0, 'stay.tv': 0.0, 'switch.kl': 0.0, 'switch.tv': 0.0}
+[34/76] probmods2-hierarchical-models/ex1                       executed=True, metrics={'observed.kl': 0.0, 'observed.tv': 0.0, 'usealpha.kl': 0.0, 'usealpha.tv': 0.0}
+[35/76] probmods2-hierarchical-models/ex2.1                     executed=True, metrics={'kl': 0.044817635301483236, 'tv': 0.10220000000000001}
+[36/76] probmods2-hierarchical-models/ex2.2                     executed=True, metrics={'sameStore.kl': 0.0, 'sameStore.tv': 0.0, 'differentStore.kl': 0.0, 'differentStore.tv': 0.0}
+[37/76] probmods2-hierarchical-models/ex2.3                     executed=True, metrics={'kl': 12.658026607341197, 'tv': 0.669}
+[38/76] probmods2-hierarchical-models/ex2.4                     executed=True, metrics={'kl': 0.06649908304093372, 'tv': 0.1702}
+[39/76] probmods2-hierarchical-models/ex3.1                     executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[40/76] probmods2-hierarchical-models/ex3.2                     executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[41/76] probmods2-observing-sequences/ex1.a                     executed=True, metrics={'kl': 15.587446110102439, 'tv': 0.9999999999999973}
+[42/76] probmods2-observing-sequences/ex1.b                     executed=True, metrics={'kl': 0.03732316109423643, 'tv': 0.11672000000000002}
+[43/76] probmods2-observing-sequences/ex1.c                     executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[44/76] probmods2-observing-sequences/ex2.a                     executed=True, metrics={'kl': 0.01588424035703094, 'tv': 0.08398000000000001}
+[45/76] probmods2-observing-sequences/ex2.c                     executed=True, metrics={'tv': 0.9999999999999991}
+[46/76] probmods2-observing-sequences/ex2.d                     executed=True, metrics={'kl': 0.02166727156339565, 'tv': 0.09499999999999997}
+[47/76] probmods2-observing-sequences/ex3.a                     executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[48/76] probmods2-observing-sequences/ex3.b                     executed=True, metrics={'kl': 23.025850929940457, 'tv': 1.0}
+[49/76] probmods2-agents-as-programs/ex1.a                      executed=True, metrics={'kl': 7.21082278693809e-05, 'tv': 0.00257412682243326}
+[50/76] probmods2-agents-as-programs/ex1.b                      executed=True, metrics={'kl': 0.021447294838066067, 'tv': 0.10135682207863714}
+[51/76] probmods2-agents-as-programs/ex2.a                      executed=True, metrics={'kl': 7.801037323926521e-05, 'tv': 7.800733050930395e-05}
+[52/76] probmods2-agents-as-programs/ex2.b                      executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[53/76] probmods2-agents-as-programs/ex2.d                      executed=True, metrics={'kl': 10.140190831053632, 'tv': 0.8332199999991745}
+[54/76] probmods2-agents-as-programs/ex2.e                      executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[55/76] probmods2-agents-as-programs/ex3                        executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[56/76] probmods2-agents-as-programs/ex4.a                      executed=True, metrics={'alpha_001.kl': 0.0, 'alpha_001.tv': 0.0, 'alpha_1.kl': 0.0, 'alpha_1.tv': 0.0, 'alpha_4.kl': 0.0, 'alpha_4.tv': 0.0, 'alpha_10.kl': 0.0, 'alpha_10.tv': 0.0}
+[57/76] probmods2-agents-as-programs/ex4.b                      executed=True, metrics={'L1.kl': 0.0, 'L1.tv': 0.0, 'L2.kl': 0.0, 'L2.tv': 0.0}
+[58/76] probmods2-inference-algorithms/ex1.1                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[59/76] probmods2-inference-algorithms/ex1.2                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[60/76] probmods2-inference-algorithms/ex1.3                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[61/76] probmods2-inference-algorithms/ex2.1                    executed=True, metrics={'point2.kl': 0.0, 'point2.tv': 0.0, 'interpolationWeight.kl': 0.0, 'interpolationWeight.tv': 0.0}
+[62/76] probmods2-inference-algorithms/ex2.2                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[63/76] probmods2-inference-algorithms/ex2.3                    executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[64/76] probmods2-inference-algorithms/ex2.4                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[65/76] probmods2-inference-algorithms/ex2.5                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[66/76] probmods2-inference-algorithms/ex4.a                    executed=True, metrics={'kl': 18.92056068606547, 'tv': 0.999999999999999}
+[67/76] probmods2-generative-models/ex1.b                       executed=True, metrics={'p1.tv': 0.0, 'p2.tv': 0.0, 'p3.tv': 0.0}
+[68/76] probmods2-generative-models/ex1.c                       executed=True, metrics={}
+[69/76] probmods2-generative-models/ex2.b                       executed=True, metrics={'tv': 1.0}
+[70/76] probmods2-generative-models/ex2.c                       executed=True, metrics={'tv': 1.0}
+[71/76] probmods2-generative-models/ex4.b                       executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[72/76] probmods2-generative-models/ex4.c                       executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[73/76] probmods2-generative-models/ex5.b                       executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[74/76] probmods2-generative-models/ex6.b                       executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[75/76] probmods2-generative-models/ex7.a                       executed=True, metrics={'tv': 0.9999999999999999}
+[76/76] probmods2-generative-models/ex7.b                       executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+
+============================================================
+SCORING DONE
+============================================================
+  Atoms:           76
+  Executed:        76 (100.0%)
+  Parse failures:  0
+  Mean KL:         1.6143 (n=86)
+  Mean TV:         0.1400 (n=93)
+  Mean value-exact: 42.86% (n=7)
+  Wall clock:      87.0s

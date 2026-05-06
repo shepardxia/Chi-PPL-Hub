@@ -7,7 +7,6 @@ __pycache__/
 
 # generated outputs
 data/atoms*.html
-data/eval_runs/
 
 # scraped third-party sources (kept locally; treat as deps)
 data/sources/

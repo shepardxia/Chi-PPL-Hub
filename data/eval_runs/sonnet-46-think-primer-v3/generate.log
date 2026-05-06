@@ -1,0 +1,23 @@
+[batch] anthropic-batch:claude-sonnet-4-6-think4000: submitting 76 requests
+[batch] id=msgbatch_01BPhkk7RZFWzUuKhMiV1Rnj
+[batch] polling every 30s (timeout 3600s)
+  [    0s] status=in_progress processing=76 succeeded=0 errored=0 canceled=0 expired=0
+  [   31s] status=in_progress processing=76 succeeded=0 errored=0 canceled=0 expired=0
+  [   61s] status=in_progress processing=76 succeeded=0 errored=0 canceled=0 expired=0
+  [   91s] status=in_progress processing=76 succeeded=0 errored=0 canceled=0 expired=0
+  [  121s] status=in_progress processing=76 succeeded=0 errored=0 canceled=0 expired=0
+  [  151s] status=ended processing=0 succeeded=76 errored=0 canceled=0 expired=0
+[batch] streaming results
+
+============================================================
+BATCH GENERATION DONE
+============================================================
+  Adapter:       anthropic-batch:claude-sonnet-4-6-think4000
+  Atoms:         76
+  Succeeded:     76
+  Batch id:      msgbatch_01BPhkk7RZFWzUuKhMiV1Rnj
+  Wall clock:      152.3s
+  Input tokens:    115,519
+  Output tokens:   67,142
+  Cache writes:    0
+  Cache reads:     0
