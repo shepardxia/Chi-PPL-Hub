@@ -3,6 +3,7 @@ import type { Atom, Bucket, ScoredRun } from '@/lib/types';
 import { bucketFor, shortMetric, toneFor, maxTV } from '@/lib/buckets';
 import { renderPrompt, renderDistViz, shapeLabel, truncate } from '@/lib/render';
 import { atomDomId } from '@/lib/atoms';
+import { SYSTEM_PROMPT_BASE, WEBPPL_PRIMER } from '@/lib/prompts';
 import FeedbackWidget from './FeedbackWidget.astro';
 
 interface Props {
@@ -61,6 +62,15 @@ const searchHaystack = [
   <div class="body">
     <div class="section">
       <div class="section-title">prompt</div>
+      <details class="sysp">
+        <summary><span class="sysp-tag">system</span> base instructions <span class="sysp-meta">used by every run</span></summary>
+        <pre>{SYSTEM_PROMPT_BASE}</pre>
+      </details>
+      <details class="sysp">
+        <summary><span class="sysp-tag">system</span> WebPPL primer <span class="sysp-meta">appended to system on `*-primer-*` runs only</span></summary>
+        <pre>{WEBPPL_PRIMER}</pre>
+      </details>
+      <div class="user-msg-label">user message</div>
       <Fragment set:html={promptHtml} />
     </div>
 

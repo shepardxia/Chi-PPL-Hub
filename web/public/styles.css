@@ -117,6 +117,31 @@ pre { background: var(--code-bg); border: 1px solid var(--border); border-radius
 
 .prompt-md { white-space: pre-wrap; font-size: 14.5px; line-height: 1.55; }
 .prompt-md code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+
+.sysp {
+  margin: 4px 0; border: 1px solid var(--border); border-radius: 4px;
+  background: #fafafa;
+}
+.sysp > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  padding: 6px 10px; font-size: 13px; color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+}
+.sysp > summary::-webkit-details-marker { display: none; }
+.sysp > summary::before { content: "▸"; color: var(--muted); font-size: 10px; }
+.sysp[open] > summary::before { content: "▾"; }
+.sysp .sysp-tag {
+  display: inline-block; background: var(--muted-bg); color: var(--muted);
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+  padding: 1px 6px; border-radius: 3px; text-transform: lowercase;
+}
+.sysp .sysp-meta { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+.sysp pre { margin: 0; border-radius: 0 0 4px 4px; border: none; border-top: 1px solid var(--border); }
+.user-msg-label {
+  display: inline-block; margin-top: 10px; margin-bottom: 4px;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.6px;
+}
 .gt-output { max-height: 260px; overflow: auto; }
 .err { color: var(--bad); font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; white-space: pre-wrap; }
 
