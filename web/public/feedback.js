@@ -1,8 +1,11 @@
 // Feedback client: vanilla JS, no framework.
-// State lives in localStorage (rater_id + name). API is POST /api/feedback.
+// State lives in localStorage (rater_id, name, and per-atom vote).
+// API is POST /api/feedback. Submitting a comment carries forward the
+// in-session vote so a single (rater, atom) ends up with one canonical row.
 
 const LS_KEY_ID = 'pplgym.rater_id';
 const LS_KEY_NAME = 'pplgym.rater_name';
+const LS_VOTE_PREFIX = 'pplgym.vote.';
 
 function ensureRaterId() {
   let id = localStorage.getItem(LS_KEY_ID);
@@ -15,7 +18,17 @@ function ensureRaterId() {
 function getName() { return localStorage.getItem(LS_KEY_NAME) || ''; }
 function setName(n) { localStorage.setItem(LS_KEY_NAME, n); }
 
-// Modal-driven name capture. Resolves to the entered name (truthy) or '' (cancel).
+function getStoredVote(atomId) {
+  return localStorage.getItem(LS_VOTE_PREFIX + atomId) || '';
+}
+function setStoredVote(atomId, vote) {
+  if (vote === 'up' || vote === 'down') {
+    localStorage.setItem(LS_VOTE_PREFIX + atomId, vote);
+  } else {
+    localStorage.removeItem(LS_VOTE_PREFIX + atomId);
+  }
+}
+
 function promptForName(initial = '') {
   const back = document.getElementById('name-modal');
   if (!back) return Promise.resolve('');
@@ -117,7 +130,7 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
-  // Vote buttons
+  // Vote buttons — toggle off if same button is clicked again.
   const voteBtn = e.target.closest('.fb-btn[data-vote]');
   if (voteBtn) {
     const node = voteBtn.closest('.fb');
@@ -127,22 +140,28 @@ document.addEventListener('click', async (e) => {
     updateNameUI(node);
     const { atomId, collection, datasetVersion } = widgetState(node);
     const rater_id = ensureRaterId();
-    const vote = voteBtn.dataset.vote;
+    const clicked = voteBtn.dataset.vote;
+    const prior = getStoredVote(atomId);
+    const vote = (prior === clicked) ? 'neutral' : clicked;
+    const ta = node.querySelector('textarea');
+    const comment = (ta?.value ?? '').trim();
     setStatus(node, 'sending…');
     try {
       await postFeedback({
         atom_id: atomId, collection, dataset_version: datasetVersion,
-        rater_id, rater_name: name, vote, comment: '',
+        rater_id, rater_name: name, vote, comment,
       });
+      setStoredVote(atomId, vote);
       setVoteHighlight(node, vote);
-      setStatus(node, 'recorded ' + (vote === 'up' ? '👍' : '👎'), 'ok');
+      const label = vote === 'up' ? '👍' : vote === 'down' ? '👎' : '∅';
+      setStatus(node, 'recorded ' + label + (comment ? ' + comment' : ''), 'ok');
     } catch (err) {
       setStatus(node, 'error: ' + err.message, 'err');
     }
     return;
   }
 
-  // Save-comment button
+  // Save-comment button: carry the current vote forward.
   const submit = e.target.closest('.fb-submit');
   if (submit) {
     const node = submit.closest('.fb');
@@ -158,14 +177,15 @@ document.addEventListener('click', async (e) => {
     updateNameUI(node);
     const { atomId, collection, datasetVersion } = widgetState(node);
     const rater_id = ensureRaterId();
+    const vote = getStoredVote(atomId) || 'neutral';
     setStatus(node, 'sending…');
     try {
       await postFeedback({
         atom_id: atomId, collection, dataset_version: datasetVersion,
-        rater_id, rater_name: name, vote: 'neutral', comment,
+        rater_id, rater_name: name, vote, comment,
       });
       ta.value = '';
-      setStatus(node, 'comment saved', 'ok');
+      setStatus(node, 'comment saved' + (vote !== 'neutral' ? ' (carried ' + (vote === 'up' ? '👍' : '👎') + ')' : ''), 'ok');
     } catch (err) {
       setStatus(node, 'error: ' + err.message, 'err');
     }
@@ -173,5 +193,10 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-// Initial render of name UI on every widget.
-document.querySelectorAll('.fb').forEach(updateNameUI);
+// Initial render: name UI + per-atom vote highlight from localStorage.
+document.querySelectorAll('.fb').forEach((node) => {
+  updateNameUI(node);
+  const atomId = node.dataset.fbAtom;
+  const v = getStoredVote(atomId);
+  if (v) setVoteHighlight(node, v);
+});
