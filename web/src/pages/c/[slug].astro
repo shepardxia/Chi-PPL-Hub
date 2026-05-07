@@ -1,0 +1,152 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import AtomCard from '@/components/AtomCard.astro';
+import NameModal from '@/components/NameModal.astro';
+import { COLLECTIONS, loadCollection, primaryRunFor, groupKey } from '@/lib/atoms';
+import { BUCKETS, bucketFor, toneFor } from '@/lib/buckets';
+import type { Atom, Bucket, ScoredRun } from '@/lib/types';
+
+export const prerender = true;
+
+export function getStaticPaths() {
+  return COLLECTIONS.map((c) => ({ params: { slug: c.slug } }));
+}
+
+const { slug } = Astro.params;
+const data = await loadCollection(slug!);
+if (!data) {
+  return Astro.redirect('/');
+}
+const primaryName = primaryRunFor(data);
+const primaryRun: Record<string, ScoredRun> = primaryName ? data.runs[primaryName] : {};
+
+function runsFor(atomId: string): { runName: string; rec: ScoredRun }[] {
+  const out: { runName: string; rec: ScoredRun }[] = [];
+  if (primaryName && primaryRun[atomId]) {
+    out.push({ runName: primaryName, rec: primaryRun[atomId] });
+  }
+  for (const [runName, byId] of Object.entries(data.runs)) {
+    if (runName === primaryName) continue;
+    if (byId[atomId]) out.push({ runName, rec: byId[atomId] });
+  }
+  return out;
+}
+
+function barClass(bucket: Bucket): string {
+  if (bucket === 'TV=0' || bucket === 'TV<.05' || bucket === 'val+') return 'b-good';
+  if (bucket === 'TV<.5' || bucket === 'TV<1') return 'b-warn';
+  if (bucket === 'TV=1' || bucket === 'val-' || bucket === 'shape!' || bucket === 'fail') return 'b-bad';
+  return 'b-muted';
+}
+
+interface PreparedGroup {
+  key: string;
+  atoms: Atom[];
+  segs: Record<string, number>;
+  tail: string;
+}
+
+const groupedMap = new Map<string, Atom[]>();
+for (const atom of data.atoms) {
+  const k = groupKey(atom);
+  if (!groupedMap.has(k)) groupedMap.set(k, []);
+  groupedMap.get(k)!.push(atom);
+}
+
+const preparedGroups: PreparedGroup[] = Array.from(groupedMap.keys())
+  .sort()
+  .map((key) => {
+    const atoms = groupedMap.get(key)!;
+    const segs: Record<string, number> = {};
+    for (const a of atoms) {
+      const b = bucketFor(primaryRun[a.id]);
+      const cls = barClass(b);
+      segs[cls] = (segs[cls] ?? 0) + 1;
+    }
+    const nGood = segs['b-good'] ?? 0;
+    const nBad = segs['b-bad'] ?? 0;
+    const tail = (nGood || nBad) ? `${nGood}✓ · ${nBad}✗` : `${atoms.length}`;
+    return { key, atoms, segs, tail };
+  });
+
+const bucketCounts: Record<string, number> = {};
+for (const a of data.atoms) {
+  const b = bucketFor(primaryRun[a.id]);
+  bucketCounts[b] = (bucketCounts[b] ?? 0) + 1;
+}
+const scoreable = data.atoms.length
+  - (bucketCounts['shape!'] ?? 0)
+  - (bucketCounts['fail'] ?? 0)
+  - (bucketCounts['no-run'] ?? 0);
+
+const datasetVersion = data.collection.slug;
+const barOrder = ['b-good', 'b-warn', 'b-bad', 'b-muted'];
+---
+
+<Layout title={`${data.collection.label} — ppl-gym`}>
+  <header class="site">
+    <div class="row1">
+      <h1><a href="/" style="color:inherit">ppl-gym</a></h1>
+      <span class="crumbs">/ {data.collection.label}</span>
+      <span class="crumbs" style="margin-left:auto;font-size:11px">
+        press <code>/</code> to search · <code>j</code>/<code>k</code> navigate · <code>esc</code> clear
+      </span>
+    </div>
+    <div class="summary">
+      <b>{data.atoms.length}</b> atoms ·
+      <b>{scoreable}</b> scoreable ({data.atoms.length ? Math.round((100 * scoreable) / data.atoms.length) : 0}%) ·
+      showing <b id="visible-count">{data.atoms.length}</b>
+    </div>
+    <div class="filterbar">
+      <span class="label">bucket</span>
+      {BUCKETS.filter((b) => (bucketCounts[b.label] ?? 0) > 0).map((b) => (
+        <span class={`pill ${b.tone}-tone`} data-bk={b.label} title={b.desc}>
+          {b.label} <span class="count">{bucketCounts[b.label]}</span>
+        </span>
+      ))}
+      <button id="expand-all" class="pill" type="button" style="margin-left:8px">expand all</button>
+      <button id="collapse-all" class="pill" type="button">collapse all</button>
+      <select id="sort" style="margin-left:8px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:#fff">
+        <option value="aid">sort: id</option>
+        <option value="bucket">sort: bucket (worst→best)</option>
+        <option value="tv-desc">sort: TV high→low</option>
+        <option value="tv-asc">sort: TV low→high</option>
+      </select>
+      <input id="search" type="search" placeholder="search id / source / shape / prompt..." />
+    </div>
+  </header>
+
+  <main>
+    <div id="empty-msg" class="empty" style="display:none">No atoms match the current filter.</div>
+
+    {preparedGroups.map((grp) => (
+      <details class="group" data-key={grp.key}>
+        <summary>
+          <span class="group-name">{grp.key}</span>
+          <span class="group-count">{grp.atoms.length} atom{grp.atoms.length !== 1 ? 's' : ''}</span>
+          <span class="group-bar">
+            {barOrder.map((cls) =>
+              (grp.segs[cls] ?? 0) > 0 ? <span class={cls} style={`flex:${grp.segs[cls]}`}></span> : null,
+            )}
+          </span>
+          <span class="group-tail">{grp.tail}</span>
+        </summary>
+        <div class="group-body">
+          {grp.atoms.map((atom) => (
+            <AtomCard
+              atom={atom}
+              runs={runsFor(atom.id)}
+              primaryRunName={primaryName}
+              collectionSlug={data.collection.slug}
+              datasetVersion={datasetVersion}
+            />
+          ))}
+        </div>
+      </details>
+    ))}
+  </main>
+
+  <NameModal />
+  <script src="/browse.js" is:inline></script>
+  <script src="/feedback.js" is:inline></script>
+</Layout>

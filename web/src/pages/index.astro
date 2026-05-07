@@ -1,0 +1,44 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { loadAllCollections, primaryRunFor } from '@/lib/atoms';
+
+export const prerender = true;
+
+const collections = await loadAllCollections();
+---
+
+<Layout title="ppl-gym — atom browser">
+  <header class="site">
+    <div class="row1">
+      <h1>ppl-gym</h1>
+      <span class="crumbs">/ atom browser</span>
+    </div>
+    <div class="summary">
+      <b>{collections.length}</b> collection{collections.length !== 1 ? 's' : ''} ·
+      <b>{collections.reduce((n, c) => n + c.atoms.length, 0)}</b> atoms total
+    </div>
+  </header>
+
+  <main>
+    <p class="empty" style="padding: 12px 4px; text-align:left">
+      WebPPL atom benchmark. Pick a collection to browse, expand atoms, and leave feedback.
+    </p>
+    <div class="collection-grid">
+      {collections.map((c) => {
+        const primary = primaryRunFor(c);
+        const runCount = Object.keys(c.runs).length;
+        return (
+          <a class="collection-card" href={`/c/${c.collection.slug}`}>
+            <h3>{c.collection.label}</h3>
+            <div class="cdesc">{c.collection.description ?? c.collection.jsonlPath}</div>
+            <div class="cmeta">
+              <b>{c.atoms.length}</b> atoms ·
+              {runCount > 0 ? ` ${runCount} run${runCount !== 1 ? 's' : ''} scored` : ' no runs'}
+              {primary ? ` · primary: ${primary}` : ''}
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  </main>
+</Layout>

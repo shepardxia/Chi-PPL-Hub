@@ -1,0 +1,30 @@
+name = "ppl-gym"
+account_id = "d70ff6f06b888a586e80496979940dd0"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+main = "./dist/_worker.js/index.js"
+
+# Astro emits the static assets here; the Cloudflare adapter packages
+# them as the worker's bundled assets.
+assets = { directory = "./dist", binding = "ASSETS" }
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ppl-gym-feedback"
+# database_id is filled in after `wrangler d1 create`.
+database_id = "fed19f84-9420-473e-9b54-abd8ac9b83ee"
+migrations_dir = "migrations"
+
+# R2 binding — uncomment after enabling R2 in the Cloudflare dashboard
+# (Storage & Databases → R2 → Enable). Bucket gets created via:
+#   wrangler r2 bucket create ppl-gym-backups
+#
+# [[r2_buckets]]
+# binding = "BACKUPS"
+# bucket_name = "ppl-gym-backups"
+#
+# Nightly D1 export → R2 will live in a separate `ppl-gym-backup`
+# Worker so this Worker can stay focused on the site + /api/feedback.
+
+[observability]
+enabled = true

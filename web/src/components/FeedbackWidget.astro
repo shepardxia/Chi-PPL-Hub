@@ -1,0 +1,36 @@
+---
+interface Props {
+  atomId: string;
+  collectionSlug: string;
+  datasetVersion: string;
+}
+const { atomId, collectionSlug, datasetVersion } = Astro.props;
+---
+
+<div
+  class="fb section"
+  data-fb-atom={atomId}
+  data-fb-collection={collectionSlug}
+  data-fb-dataset-version={datasetVersion}
+>
+  <div class="section-title">feedback</div>
+  <div class="fb-row">
+    <button type="button" class="fb-btn is-up" data-vote="up" aria-label="Thumbs up">
+      <span>👍</span><span class="fb-vote-label">looks right</span>
+    </button>
+    <button type="button" class="fb-btn is-down" data-vote="down" aria-label="Thumbs down">
+      <span>👎</span><span class="fb-vote-label">issue</span>
+    </button>
+    <span class="fb-name">
+      <span class="fb-name-empty">not signed</span>
+      <span class="fb-name-filled" hidden>rating as <b class="fb-name-text"></b><span class="fb-edit">✎</span></span>
+    </span>
+  </div>
+  <div class="fb-comment">
+    <textarea placeholder="optional note (will be saved alongside your vote)…"></textarea>
+    <div class="fb-comment-row">
+      <button type="button" class="fb-btn fb-submit">save comment</button>
+      <span class="fb-status"></span>
+    </div>
+  </div>
+</div>

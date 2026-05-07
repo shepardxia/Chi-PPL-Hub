@@ -1,0 +1,25 @@
+{
+  "name": "ppl-gym-web",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "wrangler dev",
+    "deploy": "astro build && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply ppl-gym-feedback --local",
+    "db:migrate:remote": "wrangler d1 migrations apply ppl-gym-feedback --remote",
+    "db:console:local": "wrangler d1 execute ppl-gym-feedback --local --command",
+    "db:console:remote": "wrangler d1 execute ppl-gym-feedback --remote --command"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^12.5.0",
+    "astro": "^5.13.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251001.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.20.0"
+  }
+}

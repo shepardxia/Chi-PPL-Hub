@@ -1,0 +1,132 @@
+---
+import type { Atom, ScoredRun } from '@/lib/types';
+import { bucketFor, shortMetric, toneFor } from '@/lib/buckets';
+import { renderPrompt, renderDistViz, escapeHtml, shapeLabel, truncate, safeIdForHash } from '@/lib/render';
+import FeedbackWidget from './FeedbackWidget.astro';
+
+interface Props {
+  atom: Atom;
+  runs: { runName: string; rec: ScoredRun }[];
+  primaryRunName: string | null;
+  collectionSlug: string;
+  datasetVersion: string;
+}
+const { atom, runs, primaryRunName, collectionSlug, datasetVersion } = Astro.props;
+
+const primaryRec =
+  (primaryRunName && runs.find((r) => r.runName === primaryRunName)?.rec) ||
+  runs[0]?.rec ||
+  null;
+const bucket = bucketFor(primaryRec);
+const tone = toneFor(bucket);
+const metric = shortMetric(primaryRec);
+
+const shapeStr = shapeLabel(atom.answer_shape);
+const promptHtml = renderPrompt(atom.prompt);
+const gtCode = atom.groundtruth_code;
+const gtOut = atom.groundtruth_output;
+const gtOutStr = truncate(gtOut === undefined ? '(not cached)' : JSON.stringify(gtOut, null, 2), 4000);
+const gtViz = gtOut && typeof gtOut === 'object' ? renderDistViz(gtOut) : null;
+
+const tvForSort = (() => {
+  const m = primaryRec?.evaluation?.metrics ?? {};
+  const tvs = Object.entries(m).filter(([k]) => k.endsWith('tv')).map(([_, v]) => v);
+  return tvs.length ? Math.max(...tvs).toFixed(6) : '';
+})();
+
+const searchHaystack = [
+  atom.id, atom.source ?? '', shapeStr, atom.eval_mode ?? '',
+  (atom.prompt ?? '').slice(0, 1000),
+].join(' ').toLowerCase();
+
+const activeRunName =
+  primaryRunName && runs.find((r) => r.runName === primaryRunName)
+    ? primaryRunName
+    : runs[0]?.runName ?? null;
+
+const domId = 'atom-' + safeIdForHash(atom.id);
+---
+
+<details
+  class="atom"
+  id={domId}
+  data-bk={bucket}
+  data-tv={tvForSort}
+  data-aid={atom.id}
+  data-search={searchHaystack}
+>
+  <summary>
+    <span class="aid">{atom.id}</span>
+    <span class="meta">
+      <span class="badge shape">{shapeStr}</span>
+      {runs.length > 1 && (
+        <span class="badge" title={`${runs.length} runs scored this atom`}>{runs.length} runs</span>
+      )}
+      {metric && <span class="badge tv">{metric}</span>}
+      <span class={`badge bucket ${tone}`}>{bucket}</span>
+    </span>
+  </summary>
+  <div class="body">
+    <div class="section">
+      <div class="section-title">prompt</div>
+      <Fragment set:html={promptHtml} />
+    </div>
+
+    <div class="section">
+      <div class="code-pair">
+        <div>
+          <div class="section-title">groundtruth code</div>
+          <pre>{gtCode}</pre>
+        </div>
+        <div>
+          <div class="section-title">{runs.length > 0 ? 'generated code' : 'no run'}</div>
+          {runs.length > 1 && (
+            <div class="runs-toolbar">
+              {runs.map(({ runName, rec }) => {
+                const rb = bucketFor(rec);
+                const rt = toneFor(rb);
+                const isActive = runName === activeRunName;
+                return (
+                  <span class={`run-pill ${rt}${isActive ? ' active' : ''}`} data-run={runName}>
+                    {runName}
+                    <span class="run-pill-bk">{rb}</span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <div class="run-panels">
+            {runs.map(({ runName, rec }) => {
+              const code = rec.generation?.code ?? '';
+              const err = rec.evaluation?.gen?.error;
+              const isActive = runName === activeRunName;
+              return (
+                <div class={`run-panel${isActive ? ' active' : ''}`} data-run={runName}>
+                  {err && <pre class="err">{String(err).slice(0, 600)}</pre>}
+                  <pre>{code}</pre>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">groundtruth output</div>
+      {gtViz ? (
+        <Fragment>
+          <Fragment set:html={gtViz} />
+          <details style="margin-top:6px">
+            <summary class="small" style="cursor:pointer;color:var(--muted);font-size:11px">raw JSON</summary>
+            <pre class="gt-output">{gtOutStr}</pre>
+          </details>
+        </Fragment>
+      ) : (
+        <pre class="gt-output">{gtOutStr}</pre>
+      )}
+    </div>
+
+    <FeedbackWidget atomId={atom.id} collectionSlug={collectionSlug} datasetVersion={datasetVersion} />
+  </div>
+</details>
