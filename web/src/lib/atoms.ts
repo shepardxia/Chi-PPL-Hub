@@ -1,22 +1,14 @@
-// Build-time loader for atom JSONL files and their associated scored runs.
-//
-// Reads from ../data (relative to web/), so the dataset stays the source
-// of truth in git and the site rebuilds when data changes.
-
 import { readFile, readdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Atom, Collection, ScoredRun } from './types';
 
 // Astro's build/prerender step runs with CWD = the Astro project root (web/).
-// The dataset lives one level up. import.meta.url-based resolution would point
-// into the bundled output dir during prerender and miss the data files entirely.
+// import.meta.url-based resolution would point into the bundled output dir
+// during prerender and miss the data files entirely.
 const REPO_ROOT = resolve(process.cwd(), '..');
 const DATA_DIR = join(REPO_ROOT, 'data');
 const RUNS_DIR = join(DATA_DIR, 'eval_runs');
 
-// Registry of collections to surface in the site. Adding one is a
-// one-line edit: drop a JSONL into data/, append an entry here.
 export const COLLECTIONS: Collection[] = [
   {
     slug: 'atomized-v2',
@@ -34,8 +26,13 @@ export const COLLECTIONS: Collection[] = [
 ];
 
 async function readJsonl<T>(absPath: string): Promise<T[]> {
-  if (!existsSync(absPath)) return [];
-  const text = await readFile(absPath, 'utf8');
+  let text: string;
+  try {
+    text = await readFile(absPath, 'utf8');
+  } catch (e: any) {
+    if (e?.code === 'ENOENT') return [];
+    throw e;
+  }
   const out: T[] = [];
   for (const line of text.split('\n')) {
     const t = line.trim();
@@ -46,17 +43,26 @@ async function readJsonl<T>(absPath: string): Promise<T[]> {
 }
 
 async function loadAllRuns(): Promise<Record<string, Record<string, ScoredRun>>> {
-  if (!existsSync(RUNS_DIR)) return {};
+  let entries;
+  try {
+    entries = await readdir(RUNS_DIR, { withFileTypes: true });
+  } catch (e: any) {
+    if (e?.code === 'ENOENT') return {};
+    throw e;
+  }
+  const dirs = entries.filter((e) => e.isDirectory());
+  const loaded = await Promise.all(
+    dirs.map(async (e) => {
+      const recs = await readJsonl<ScoredRun>(join(RUNS_DIR, e.name, 'scored.jsonl'));
+      return [e.name, recs] as const;
+    }),
+  );
   const out: Record<string, Record<string, ScoredRun>> = {};
-  const entries = await readdir(RUNS_DIR, { withFileTypes: true });
-  for (const e of entries) {
-    if (!e.isDirectory()) continue;
-    const scoredPath = join(RUNS_DIR, e.name, 'scored.jsonl');
-    const recs = await readJsonl<ScoredRun>(scoredPath);
+  for (const [name, recs] of loaded) {
     if (recs.length === 0) continue;
     const byId: Record<string, ScoredRun> = {};
     for (const r of recs) byId[r.id] = r;
-    out[e.name] = byId;
+    out[name] = byId;
   }
   return out;
 }
@@ -64,7 +70,6 @@ async function loadAllRuns(): Promise<Record<string, Record<string, ScoredRun>>>
 export interface CollectionData {
   collection: Collection;
   atoms: Atom[];
-  /** runs that scored at least one atom in this collection */
   runs: Record<string, Record<string, ScoredRun>>;
 }
 
@@ -111,11 +116,9 @@ export async function loadAllCollections(): Promise<CollectionData[]> {
 export function primaryRunFor(d: CollectionData): string | null {
   const pref = d.collection.primaryRun;
   if (pref && d.runs[pref]) return pref;
-  const first = Object.keys(d.runs)[0];
-  return first ?? null;
+  return Object.keys(d.runs)[0] ?? null;
 }
 
-/** Group atoms by source-file basename — same key as the legacy renderer. */
 export function groupKey(atom: Atom): string {
   const src = atom.source ?? '';
   if (src) {
@@ -126,7 +129,6 @@ export function groupKey(atom: Atom): string {
   return aid.includes('/') ? aid.split('/')[0] : aid;
 }
 
-/** Stable atom-id-derived URL fragment. */
-export function atomFragment(atomId: string): string {
-  return atomId.replace(/\//g, '--').replace(/ /g, '_');
+export function atomDomId(atomId: string): string {
+  return 'atom-' + atomId.replace(/\//g, '--').replace(/ /g, '_');
 }

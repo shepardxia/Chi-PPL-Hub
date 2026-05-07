@@ -3,7 +3,7 @@ import Layout from '@/layouts/Layout.astro';
 import AtomCard from '@/components/AtomCard.astro';
 import NameModal from '@/components/NameModal.astro';
 import { COLLECTIONS, loadCollection, primaryRunFor, groupKey } from '@/lib/atoms';
-import { BUCKETS, bucketFor, toneFor } from '@/lib/buckets';
+import { BUCKETS, bucketFor, barClassFor } from '@/lib/buckets';
 import type { Atom, Bucket, ScoredRun } from '@/lib/types';
 
 export const prerender = true;
@@ -13,31 +13,26 @@ export function getStaticPaths() {
 }
 
 const { slug } = Astro.params;
-const data = await loadCollection(slug!);
-if (!data) {
-  return Astro.redirect('/');
-}
+const data = (await loadCollection(slug!))!;
 const primaryName = primaryRunFor(data);
 const primaryRun: Record<string, ScoredRun> = primaryName ? data.runs[primaryName] : {};
+
+const runEntries = Object.entries(data.runs);
 
 function runsFor(atomId: string): { runName: string; rec: ScoredRun }[] {
   const out: { runName: string; rec: ScoredRun }[] = [];
   if (primaryName && primaryRun[atomId]) {
     out.push({ runName: primaryName, rec: primaryRun[atomId] });
   }
-  for (const [runName, byId] of Object.entries(data.runs)) {
+  for (const [runName, byId] of runEntries) {
     if (runName === primaryName) continue;
     if (byId[atomId]) out.push({ runName, rec: byId[atomId] });
   }
   return out;
 }
 
-function barClass(bucket: Bucket): string {
-  if (bucket === 'TV=0' || bucket === 'TV<.05' || bucket === 'val+') return 'b-good';
-  if (bucket === 'TV<.5' || bucket === 'TV<1') return 'b-warn';
-  if (bucket === 'TV=1' || bucket === 'val-' || bucket === 'shape!' || bucket === 'fail') return 'b-bad';
-  return 'b-muted';
-}
+const primaryBucket = new Map<string, Bucket>();
+for (const a of data.atoms) primaryBucket.set(a.id, bucketFor(primaryRun[a.id]));
 
 interface PreparedGroup {
   key: string;
@@ -59,8 +54,7 @@ const preparedGroups: PreparedGroup[] = Array.from(groupedMap.keys())
     const atoms = groupedMap.get(key)!;
     const segs: Record<string, number> = {};
     for (const a of atoms) {
-      const b = bucketFor(primaryRun[a.id]);
-      const cls = barClass(b);
+      const cls = barClassFor(primaryBucket.get(a.id)!);
       segs[cls] = (segs[cls] ?? 0) + 1;
     }
     const nGood = segs['b-good'] ?? 0;
@@ -70,10 +64,7 @@ const preparedGroups: PreparedGroup[] = Array.from(groupedMap.keys())
   });
 
 const bucketCounts: Record<string, number> = {};
-for (const a of data.atoms) {
-  const b = bucketFor(primaryRun[a.id]);
-  bucketCounts[b] = (bucketCounts[b] ?? 0) + 1;
-}
+for (const b of primaryBucket.values()) bucketCounts[b] = (bucketCounts[b] ?? 0) + 1;
 const scoreable = data.atoms.length
   - (bucketCounts['shape!'] ?? 0)
   - (bucketCounts['fail'] ?? 0)
@@ -136,7 +127,7 @@ const barOrder = ['b-good', 'b-warn', 'b-bad', 'b-muted'];
             <AtomCard
               atom={atom}
               runs={runsFor(atom.id)}
-              primaryRunName={primaryName}
+              bucket={primaryBucket.get(atom.id)!}
               collectionSlug={data.collection.slug}
               datasetVersion={datasetVersion}
             />

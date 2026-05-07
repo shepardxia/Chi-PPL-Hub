@@ -1,7 +1,3 @@
-// Ported from scripts/render_atoms_html.py:bucket_for / bucket_class.
-// Bucket-naming convention is intentionally stable across this and the
-// legacy Python renderer so that audit-log diff comparisons keep working.
-
 import type { Bucket, ScoredRun } from './types';
 
 export const BUCKETS: { label: Bucket; tone: 'good' | 'warn' | 'bad' | 'muted'; desc: string }[] = [
@@ -17,41 +13,55 @@ export const BUCKETS: { label: Bucket; tone: 'good' | 'warn' | 'bad' | 'muted'; 
   { label: 'no-run', tone: 'muted', desc: 'no run available' },
 ];
 
+export function tvValues(rec: ScoredRun | undefined | null): number[] {
+  const m = rec?.evaluation?.metrics ?? {};
+  return Object.entries(m).filter(([k]) => k.endsWith('tv')).map(([, v]) => v);
+}
+
+export function approxValues(rec: ScoredRun | undefined | null): number[] {
+  const m = rec?.evaluation?.metrics ?? {};
+  return Object.entries(m).filter(([k]) => k.endsWith('approx')).map(([, v]) => v);
+}
+
+export function maxTV(rec: ScoredRun | undefined | null): number | null {
+  const tvs = tvValues(rec);
+  return tvs.length ? Math.max(...tvs) : null;
+}
+
 export function bucketFor(rec: ScoredRun | undefined | null): Bucket {
   if (!rec) return 'no-run';
   const ev = rec.evaluation ?? {};
-  const gen = ev.gen ?? {};
-  if (!gen.executed) return 'fail';
+  if (!ev.gen?.executed) return 'fail';
   const cmp = ev.comparison ?? {};
   const err = cmp.error ?? '';
   if (cmp.ok === false && (err.startsWith('not a') || err.startsWith('samples must'))) {
     return 'shape!';
   }
-  const metrics = ev.metrics ?? {};
-  const tvs = Object.entries(metrics).filter(([k]) => k.endsWith('tv')).map(([_, v]) => v);
-  if (tvs.length > 0) {
-    const worst = Math.max(...tvs);
+  const worst = maxTV(rec);
+  if (worst !== null) {
     if (worst === 0) return 'TV=0';
     if (worst < 0.05) return 'TV<.05';
     if (worst < 0.5) return 'TV<.5';
     if (worst < 1) return 'TV<1';
     return 'TV=1';
   }
-  const exacts = Object.entries(metrics).filter(([k]) => k.endsWith('approx')).map(([_, v]) => v);
+  const exacts = approxValues(rec);
   if (exacts.length > 0) return exacts.every((v) => v === 1.0) ? 'val+' : 'val-';
   return 'shape!';
 }
 
 export function shortMetric(rec: ScoredRun | undefined | null): string {
-  if (!rec) return '';
-  const metrics = rec.evaluation?.metrics ?? {};
-  const tvs = Object.entries(metrics).filter(([k]) => k.endsWith('tv')).map(([_, v]) => v);
-  if (tvs.length > 0) return `TV=${Math.max(...tvs).toFixed(2)}`;
-  const exacts = Object.entries(metrics).filter(([k]) => k.endsWith('approx')).map(([_, v]) => v);
+  const worst = maxTV(rec);
+  if (worst !== null) return `TV=${worst.toFixed(2)}`;
+  const exacts = approxValues(rec);
   if (exacts.length > 0) return exacts.every((v) => v === 1.0) ? '✓' : '✗';
   return '';
 }
 
 export function toneFor(bucket: Bucket): 'good' | 'warn' | 'bad' | 'muted' {
   return BUCKETS.find((b) => b.label === bucket)?.tone ?? 'muted';
+}
+
+export function barClassFor(bucket: Bucket): string {
+  return 'b-' + toneFor(bucket);
 }

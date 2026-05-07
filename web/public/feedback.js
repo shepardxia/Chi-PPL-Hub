@@ -1,11 +1,12 @@
-// Feedback client: vanilla JS, no framework.
-// State lives in localStorage (rater_id, name, and per-atom vote).
-// API is POST /api/feedback. Submitting a comment carries forward the
-// in-session vote so a single (rater, atom) ends up with one canonical row.
+// Feedback client. State lives in localStorage (rater_id, name, per-atom vote).
+// API is POST /api/feedback. A single (rater, atom) ends up with one canonical
+// row because comment/vote submissions both carry the current state forward.
 
 const LS_KEY_ID = 'pplgym.rater_id';
 const LS_KEY_NAME = 'pplgym.rater_name';
 const LS_VOTE_PREFIX = 'pplgym.vote.';
+
+const VOTE_GLYPH = { up: '👍', down: '👎', neutral: '∅' };
 
 function ensureRaterId() {
   let id = localStorage.getItem(LS_KEY_ID);
@@ -15,18 +16,13 @@ function ensureRaterId() {
   }
   return id;
 }
-function getName() { return localStorage.getItem(LS_KEY_NAME) || ''; }
-function setName(n) { localStorage.setItem(LS_KEY_NAME, n); }
+const getName = () => localStorage.getItem(LS_KEY_NAME) || '';
+const setName = (n) => localStorage.setItem(LS_KEY_NAME, n);
 
-function getStoredVote(atomId) {
-  return localStorage.getItem(LS_VOTE_PREFIX + atomId) || '';
-}
+const getStoredVote = (atomId) => localStorage.getItem(LS_VOTE_PREFIX + atomId) || '';
 function setStoredVote(atomId, vote) {
-  if (vote === 'up' || vote === 'down') {
-    localStorage.setItem(LS_VOTE_PREFIX + atomId, vote);
-  } else {
-    localStorage.removeItem(LS_VOTE_PREFIX + atomId);
-  }
+  if (vote === 'up' || vote === 'down') localStorage.setItem(LS_VOTE_PREFIX + atomId, vote);
+  else localStorage.removeItem(LS_VOTE_PREFIX + atomId);
 }
 
 function promptForName(initial = '') {
@@ -65,9 +61,7 @@ function promptForName(initial = '') {
 }
 
 async function ensureName() {
-  const cur = getName();
-  if (cur) return cur;
-  return await promptForName();
+  return getName() || (await promptForName());
 }
 
 async function postFeedback(body) {
@@ -80,27 +74,20 @@ async function postFeedback(body) {
   return await r.json();
 }
 
-function widgetState(node) {
-  return {
-    atomId: node.dataset.fbAtom,
-    collection: node.dataset.fbCollection,
-    datasetVersion: node.dataset.fbDatasetVersion,
-  };
-}
+const widgetState = (node) => ({
+  atomId: node.dataset.fbAtom,
+  collection: node.dataset.fbCollection,
+  datasetVersion: node.dataset.fbDatasetVersion,
+});
 
 function updateNameUI(node) {
   const name = getName();
   const empty = node.querySelector('.fb-name-empty');
   const filled = node.querySelector('.fb-name-filled');
   if (!empty || !filled) return;
-  if (name) {
-    empty.hidden = true;
-    filled.hidden = false;
-    filled.querySelector('.fb-name-text').textContent = name;
-  } else {
-    empty.hidden = false;
-    filled.hidden = true;
-  }
+  empty.hidden = !!name;
+  filled.hidden = !name;
+  if (name) filled.querySelector('.fb-name-text').textContent = name;
 }
 
 function setStatus(node, msg, kind) {
@@ -111,92 +98,81 @@ function setStatus(node, msg, kind) {
 }
 
 function setVoteHighlight(node, vote) {
-  const up = node.querySelector('.fb-btn.is-up');
-  const down = node.querySelector('.fb-btn.is-down');
-  if (!up || !down) return;
-  up.classList.toggle('active', vote === 'up');
-  down.classList.toggle('active', vote === 'down');
+  node.querySelector('.fb-btn.is-up')?.classList.toggle('active', vote === 'up');
+  node.querySelector('.fb-btn.is-down')?.classList.toggle('active', vote === 'down');
 }
 
-document.addEventListener('click', async (e) => {
-  // Edit-name pencil
-  const edit = e.target.closest('.fb-edit');
-  if (edit) {
-    e.preventDefault();
-    const newName = await promptForName(getName());
-    if (newName) {
-      document.querySelectorAll('.fb').forEach(updateNameUI);
-    }
+async function submit(node, vote, comment) {
+  const name = await ensureName();
+  if (!name) return null;
+  updateNameUI(node);
+  const { atomId, collection, datasetVersion } = widgetState(node);
+  setStatus(node, 'sending…');
+  try {
+    await postFeedback({
+      atom_id: atomId, collection, dataset_version: datasetVersion,
+      rater_id: ensureRaterId(), rater_name: name, vote, comment,
+    });
+    return { atomId, vote };
+  } catch (err) {
+    setStatus(node, 'error: ' + err.message, 'err');
+    return null;
+  }
+}
+
+async function handleVote(node, clickedVote) {
+  const { atomId } = widgetState(node);
+  const prior = getStoredVote(atomId);
+  const vote = (prior === clickedVote) ? 'neutral' : clickedVote;
+  const ta = node.querySelector('textarea');
+  const comment = (ta?.value ?? '').trim();
+  const result = await submit(node, vote, comment);
+  if (!result) return;
+  setStoredVote(atomId, vote);
+  setVoteHighlight(node, vote);
+  setStatus(node, 'recorded ' + VOTE_GLYPH[vote] + (comment ? ' + comment' : ''), 'ok');
+}
+
+async function handleComment(node) {
+  const ta = node.querySelector('textarea');
+  const comment = (ta?.value ?? '').trim();
+  if (!comment) {
+    setStatus(node, 'comment is empty', 'err');
     return;
   }
+  const { atomId } = widgetState(node);
+  const vote = getStoredVote(atomId) || 'neutral';
+  const result = await submit(node, vote, comment);
+  if (!result) return;
+  ta.value = '';
+  const carried = vote !== 'neutral' ? ` (carried ${VOTE_GLYPH[vote]})` : '';
+  setStatus(node, 'comment saved' + carried, 'ok');
+}
 
-  // Vote buttons — toggle off if same button is clicked again.
+async function handleEditName() {
+  const newName = await promptForName(getName());
+  if (newName) document.querySelectorAll('.fb').forEach(updateNameUI);
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.fb-edit')) {
+    e.preventDefault();
+    return handleEditName();
+  }
   const voteBtn = e.target.closest('.fb-btn[data-vote]');
   if (voteBtn) {
     const node = voteBtn.closest('.fb');
-    if (!node) return;
-    const name = await ensureName();
-    if (!name) return; // cancelled
-    updateNameUI(node);
-    const { atomId, collection, datasetVersion } = widgetState(node);
-    const rater_id = ensureRaterId();
-    const clicked = voteBtn.dataset.vote;
-    const prior = getStoredVote(atomId);
-    const vote = (prior === clicked) ? 'neutral' : clicked;
-    const ta = node.querySelector('textarea');
-    const comment = (ta?.value ?? '').trim();
-    setStatus(node, 'sending…');
-    try {
-      await postFeedback({
-        atom_id: atomId, collection, dataset_version: datasetVersion,
-        rater_id, rater_name: name, vote, comment,
-      });
-      setStoredVote(atomId, vote);
-      setVoteHighlight(node, vote);
-      const label = vote === 'up' ? '👍' : vote === 'down' ? '👎' : '∅';
-      setStatus(node, 'recorded ' + label + (comment ? ' + comment' : ''), 'ok');
-    } catch (err) {
-      setStatus(node, 'error: ' + err.message, 'err');
-    }
-    return;
+    if (node) return handleVote(node, voteBtn.dataset.vote);
   }
-
-  // Save-comment button: carry the current vote forward.
-  const submit = e.target.closest('.fb-submit');
-  if (submit) {
-    const node = submit.closest('.fb');
-    if (!node) return;
-    const ta = node.querySelector('textarea');
-    const comment = (ta?.value ?? '').trim();
-    if (!comment) {
-      setStatus(node, 'comment is empty', 'err');
-      return;
-    }
-    const name = await ensureName();
-    if (!name) return;
-    updateNameUI(node);
-    const { atomId, collection, datasetVersion } = widgetState(node);
-    const rater_id = ensureRaterId();
-    const vote = getStoredVote(atomId) || 'neutral';
-    setStatus(node, 'sending…');
-    try {
-      await postFeedback({
-        atom_id: atomId, collection, dataset_version: datasetVersion,
-        rater_id, rater_name: name, vote, comment,
-      });
-      ta.value = '';
-      setStatus(node, 'comment saved' + (vote !== 'neutral' ? ' (carried ' + (vote === 'up' ? '👍' : '👎') + ')' : ''), 'ok');
-    } catch (err) {
-      setStatus(node, 'error: ' + err.message, 'err');
-    }
-    return;
+  const submitBtn = e.target.closest('.fb-submit');
+  if (submitBtn) {
+    const node = submitBtn.closest('.fb');
+    if (node) return handleComment(node);
   }
 });
 
-// Initial render: name UI + per-atom vote highlight from localStorage.
 document.querySelectorAll('.fb').forEach((node) => {
   updateNameUI(node);
-  const atomId = node.dataset.fbAtom;
-  const v = getStoredVote(atomId);
+  const v = getStoredVote(node.dataset.fbAtom);
   if (v) setVoteHighlight(node, v);
 });

@@ -1,25 +1,25 @@
 ---
-import type { Atom, ScoredRun } from '@/lib/types';
-import { bucketFor, shortMetric, toneFor } from '@/lib/buckets';
-import { renderPrompt, renderDistViz, escapeHtml, shapeLabel, truncate, safeIdForHash } from '@/lib/render';
+import type { Atom, Bucket, ScoredRun } from '@/lib/types';
+import { bucketFor, shortMetric, toneFor, maxTV } from '@/lib/buckets';
+import { renderPrompt, renderDistViz, shapeLabel, truncate } from '@/lib/render';
+import { atomDomId } from '@/lib/atoms';
 import FeedbackWidget from './FeedbackWidget.astro';
 
 interface Props {
   atom: Atom;
+  /** Runs in display order; the first entry is the active run by default. */
   runs: { runName: string; rec: ScoredRun }[];
-  primaryRunName: string | null;
+  /** Bucket for the active run, precomputed by the page. */
+  bucket: Bucket;
   collectionSlug: string;
   datasetVersion: string;
 }
-const { atom, runs, primaryRunName, collectionSlug, datasetVersion } = Astro.props;
+const { atom, runs, bucket, collectionSlug, datasetVersion } = Astro.props;
 
-const primaryRec =
-  (primaryRunName && runs.find((r) => r.runName === primaryRunName)?.rec) ||
-  runs[0]?.rec ||
-  null;
-const bucket = bucketFor(primaryRec);
+const activeRec = runs[0]?.rec ?? null;
+const activeRunName = runs[0]?.runName ?? null;
 const tone = toneFor(bucket);
-const metric = shortMetric(primaryRec);
+const metric = shortMetric(activeRec);
 
 const shapeStr = shapeLabel(atom.answer_shape);
 const promptHtml = renderPrompt(atom.prompt);
@@ -29,27 +29,19 @@ const gtOutStr = truncate(gtOut === undefined ? '(not cached)' : JSON.stringify(
 const gtViz = gtOut && typeof gtOut === 'object' ? renderDistViz(gtOut) : null;
 
 const tvForSort = (() => {
-  const m = primaryRec?.evaluation?.metrics ?? {};
-  const tvs = Object.entries(m).filter(([k]) => k.endsWith('tv')).map(([_, v]) => v);
-  return tvs.length ? Math.max(...tvs).toFixed(6) : '';
+  const v = maxTV(activeRec);
+  return v === null ? '' : v.toFixed(6);
 })();
 
 const searchHaystack = [
   atom.id, atom.source ?? '', shapeStr, atom.eval_mode ?? '',
   (atom.prompt ?? '').slice(0, 1000),
 ].join(' ').toLowerCase();
-
-const activeRunName =
-  primaryRunName && runs.find((r) => r.runName === primaryRunName)
-    ? primaryRunName
-    : runs[0]?.runName ?? null;
-
-const domId = 'atom-' + safeIdForHash(atom.id);
 ---
 
 <details
   class="atom"
-  id={domId}
+  id={atomDomId(atom.id)}
   data-bk={bucket}
   data-tv={tvForSort}
   data-aid={atom.id}
@@ -114,14 +106,12 @@ const domId = 'atom-' + safeIdForHash(atom.id);
 
     <div class="section">
       <div class="section-title">groundtruth output</div>
+      {gtViz && <Fragment set:html={gtViz} />}
       {gtViz ? (
-        <Fragment>
-          <Fragment set:html={gtViz} />
-          <details style="margin-top:6px">
-            <summary class="small" style="cursor:pointer;color:var(--muted);font-size:11px">raw JSON</summary>
-            <pre class="gt-output">{gtOutStr}</pre>
-          </details>
-        </Fragment>
+        <details style="margin-top:6px">
+          <summary class="small" style="cursor:pointer;color:var(--muted);font-size:11px">raw JSON</summary>
+          <pre class="gt-output">{gtOutStr}</pre>
+        </details>
       ) : (
         <pre class="gt-output">{gtOutStr}</pre>
       )}

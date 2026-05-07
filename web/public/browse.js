@@ -1,6 +1,3 @@
-// Browse page interactivity: filter pills, search, sort, deep links, kbd.
-// Mirrors the legacy render_atoms_html.py inline script.
-
 const atoms = Array.from(document.querySelectorAll('.atom'));
 const groups = Array.from(document.querySelectorAll('.group'));
 const main = document.querySelector('main');
@@ -30,12 +27,12 @@ function applyFilter() {
     const okBk = bk.size === 0 || bk.has(a.dataset.bk);
     const okQ = !q || (a.dataset.search ?? '').indexOf(q) !== -1;
     const show = okBk && okQ;
-    a.style.display = show ? '' : 'none';
+    a.classList.toggle('is-hidden', !show);
     if (show) visible++;
   }
   for (const g of groups) {
-    const matched = g.querySelectorAll('.atom:not([style*="display: none"])').length;
-    g.style.display = (matched === 0 && isFiltering) ? 'none' : '';
+    const matched = g.querySelectorAll('.atom:not(.is-hidden)').length;
+    g.classList.toggle('is-hidden', matched === 0 && isFiltering);
     if (isFiltering) g.open = matched > 0;
   }
   if (visibleCount) visibleCount.textContent = visible;
@@ -75,7 +72,6 @@ sortSel?.addEventListener('change', applySort);
 document.getElementById('expand-all')?.addEventListener('click', () => { for (const g of groups) g.open = true; });
 document.getElementById('collapse-all')?.addEventListener('click', () => { for (const g of groups) g.open = false; });
 
-// Per-atom run picker
 document.addEventListener('click', (e) => {
   const pill = e.target.closest('.run-pill');
   if (!pill) return;
@@ -86,7 +82,6 @@ document.addEventListener('click', (e) => {
   for (const p of atom.querySelectorAll('.run-panel')) p.classList.toggle('active', p.dataset.run === target);
 });
 
-// Deep link via hash
 function focusFromHash() {
   const h = location.hash.slice(1);
   if (!h) return;
@@ -104,8 +99,7 @@ for (const a of atoms) {
   a.addEventListener('toggle', () => { if (a.open) history.replaceState(null, '', '#' + a.id); });
 }
 
-// Keyboard: / focus, j/k navigate, esc clear
-function visibleAtoms() { return atoms.filter((a) => a.style.display !== 'none'); }
+const visibleAtoms = () => atoms.filter((a) => !a.classList.contains('is-hidden'));
 function currentIndex(list) { for (let i = 0; i < list.length; i++) if (list[i].classList.contains('is-target')) return i; return -1; }
 function focusAtom(a) {
   for (const x of atoms) x.classList.remove('is-target');
