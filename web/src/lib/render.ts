@@ -463,3 +463,80 @@ export function truncateOutput(o: RenderOutput, n = 48): RenderOutput {
   }
   return o;
 }
+
+/** Heuristic: does this output look like a continuous distribution that
+ *  needs binning? (Many distinct numeric support values, low per-bucket mass.) */
+function looksContinuous(o: RenderOutput): boolean {
+  if (!o || (o.kind !== 'distribution' && o.kind !== 'samples')) return false;
+  if (o.support.length < 16) return false;
+  let numeric = 0;
+  let nonInt = 0;
+  const sample = o.support.length > 100 ? o.support.slice(0, 100) : o.support;
+  for (const s of sample) {
+    const x = Number(s);
+    if (!Number.isFinite(x)) continue;
+    numeric++;
+    if (!Number.isInteger(x)) nonInt++;
+  }
+  if (numeric / sample.length < 0.9) return false;
+  // Mostly non-integer values, OR a *lot* of distinct integers → continuous.
+  return nonInt / numeric > 0.5 || o.support.length > 64;
+}
+
+/** Bin a set of likely-continuous distributions/samples into shared bins.
+ *  Keeps charts comparable: all series get the same bin edges from the union
+ *  range. nBins ≈ 24 fits the 640px chart cleanly. */
+function binShared(outputs: RenderOutput[], nBins = 24): RenderOutput[] {
+  let min = Infinity, max = -Infinity;
+  for (const o of outputs) {
+    if (!o || (o.kind !== 'distribution' && o.kind !== 'samples')) continue;
+    for (const s of o.support) {
+      const x = Number(s);
+      if (!Number.isFinite(x)) continue;
+      if (x < min) min = x;
+      if (x > max) max = x;
+    }
+  }
+  if (!Number.isFinite(min) || min === max) return outputs;
+  const step = (max - min) / nBins;
+  const labels: string[] = [];
+  const decimals = pickDecimals(step);
+  for (let i = 0; i < nBins; i++) {
+    const mid = min + step * (i + 0.5);
+    labels.push(mid.toFixed(decimals));
+  }
+  return outputs.map((o) => {
+    if (!o) return o;
+    if (o.kind !== 'distribution' && o.kind !== 'samples') return o;
+    const bins = new Array(nBins).fill(0);
+    const weights: number[] = o.kind === 'distribution'
+      ? o.probs
+      : (() => {
+          const total = o.counts.reduce((a, b) => a + b, 0) || 1;
+          return o.counts.map((c) => c / total);
+        })();
+    for (let i = 0; i < o.support.length; i++) {
+      const x = Number(o.support[i]);
+      if (!Number.isFinite(x)) continue;
+      let b = Math.floor((x - min) / step);
+      if (b >= nBins) b = nBins - 1;
+      if (b < 0) b = 0;
+      bins[b] += weights[i];
+    }
+    return { kind: 'distribution', support: labels, probs: bins };
+  });
+}
+
+function pickDecimals(step: number): number {
+  if (step >= 1) return 1;
+  if (step >= 0.1) return 2;
+  if (step >= 0.01) return 3;
+  return 4;
+}
+
+/** Process a per-atom set of outputs: bin if continuous, truncate if huge. */
+export function prepareAtomOutputs(outputs: RenderOutput[]): RenderOutput[] {
+  const someContinuous = outputs.some(looksContinuous);
+  if (someContinuous) return binShared(outputs);
+  return outputs.map((o) => truncateOutput(o));
+}

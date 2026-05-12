@@ -3,7 +3,7 @@ import type { Atom, Bucket, ScoredRun, RunMeta, RenderOutput } from '@/lib/types
 import { bucketFor, fmtTV, fmtKL, glyphFor, toneFor, descFor, maxTV, maxKL, BUCKET_BY_ID } from '@/lib/buckets';
 import {
   renderMarkdown, renderCode, renderChart, renderValueOutput,
-  normalizeOutput, shapeLabel, atomDomId, isDistLike, truncateOutput,
+  normalizeOutput, shapeLabel, atomDomId, isDistLike, prepareAtomOutputs,
 } from '@/lib/render';
 import { atomLeaf, atomPrefix } from '@/lib/atoms';
 
@@ -19,7 +19,14 @@ const { atom, runs, perAtomRuns, primary, collectionSlug } = Astro.props;
 const shapeStr = shapeLabel(atom.answer_shape);
 const promptHtml = renderMarkdown(atom.prompt);
 const gtCode = atom.groundtruth_code;
-const gtOutput: RenderOutput = truncateOutput(normalizeOutput(atom.groundtruth_output, atom.answer_shape));
+const rawGtOutput: RenderOutput = normalizeOutput(atom.groundtruth_output, atom.answer_shape);
+const rawRunOutputs: (RenderOutput | null)[] = runs.map((r) => {
+  const rec = perAtomRuns[r.id];
+  return rec ? normalizeOutput(rec.evaluation?.gen?.answer, atom.answer_shape) : null;
+});
+const _prepared = prepareAtomOutputs([rawGtOutput, ...rawRunOutputs]);
+const gtOutput = _prepared[0];
+const preparedRunOutputs: (RenderOutput | null)[] = _prepared.slice(1) as (RenderOutput | null)[];
 
 interface SourceData {
   key: string;             // 'gt' | runId
@@ -39,7 +46,7 @@ const gtSrc: SourceData = {
   bucket: null, tv: null, kl: null,
 };
 
-const runSources: SourceData[] = runs.map((r) => {
+const runSources: SourceData[] = runs.map((r, i) => {
   const rec = perAtomRuns[r.id];
   const bucket = bucketFor(rec);
   return {
@@ -47,7 +54,7 @@ const runSources: SourceData[] = runs.map((r) => {
     label: r.label,
     short: r.short,
     code: rec?.generation?.code ?? '',
-    output: rec ? truncateOutput(normalizeOutput(rec.evaluation?.gen?.answer, atom.answer_shape)) : null,
+    output: preparedRunOutputs[i],
     error: rec?.evaluation?.gen?.error ?? null,
     bucket,
     tv: maxTV(rec),
