@@ -63,16 +63,31 @@ const sources: PaneSource[] = [
   }),
 ];
 
-function statusFor(key: string): { tv: number | null; bucket: Bucket; tone: string } {
-  if (key === 'gt') return { tv: null, bucket: 'no-run', tone: 'muted' };
+interface StatusInfo { kind: 'gt' | 'tv' | 'label' | 'empty'; tv?: number; label?: string; tone: string; }
+
+function statusFor(key: string): StatusInfo {
+  if (key === 'gt') return { kind: 'gt', tone: 'muted' };
   const entry = runs.find((r) => r.runName === key);
-  if (!entry) return { tv: null, bucket: 'no-run', tone: 'muted' };
+  if (!entry) return { kind: 'empty', tone: 'muted' };
   const b = bucketFor(entry.rec);
-  return { tv: maxTV(entry.rec), bucket: b, tone: toneFor(b) };
+  const tone = toneFor(b);
+  const tv = maxTV(entry.rec);
+  if (tv !== null) return { kind: 'tv', tv, tone };
+  return { kind: 'label', label: b, tone };
+}
+
+function renderStatus(info: StatusInfo): string {
+  if (info.kind === 'gt') return '<span class="status-tag">reference</span>';
+  if (info.kind === 'tv') return `<span>TV=${info.tv!.toFixed(2)}</span>`;
+  if (info.kind === 'label') return `<span>${info.label}</span>`;
+  return '';
 }
 
 const sourcesData = Object.fromEntries(
-  sources.map((s) => [s.key, { bucket: s.bucketLabel, tone: s.tone, err: s.err ?? '' }]),
+  sources.map((s) => {
+    const info = statusFor(s.key);
+    return [s.key, { info, err: s.err ?? '' }];
+  }),
 );
 ---
 
@@ -156,16 +171,7 @@ const sourcesData = Object.fromEntries(
                 <option value={o.value} selected={o.selected}>{o.label}</option>
               ))}
             </select>
-            {(() => {
-              const s = statusFor(initialLeft);
-              return (
-                <span class={`codepane-status tone-${s.tone}`}>
-                  <span>{glyphFor(s.bucket)}</span>
-                  <span>{s.bucket}</span>
-                  {s.tv !== null && <span>· TV={s.tv.toFixed(2)}</span>}
-                </span>
-              );
-            })()}
+            <span class={`codepane-status tone-${statusFor(initialLeft).tone}`} set:html={renderStatus(statusFor(initialLeft))} />
           </div>
           {sources.map((s) => (
             <Fragment>
@@ -183,16 +189,7 @@ const sourcesData = Object.fromEntries(
                 <option value={o.value} selected={o.selected}>{o.label}</option>
               ))}
             </select>
-            {(() => {
-              const s = statusFor(initialRight);
-              return (
-                <span class={`codepane-status tone-${s.tone}`}>
-                  <span>{glyphFor(s.bucket)}</span>
-                  <span>{s.bucket}</span>
-                  {s.tv !== null && <span>· TV={s.tv.toFixed(2)}</span>}
-                </span>
-              );
-            })()}
+            <span class={`codepane-status tone-${statusFor(initialRight).tone}`} set:html={renderStatus(statusFor(initialRight))} />
           </div>
           {sources.map((s) => (
             <Fragment>

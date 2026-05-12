@@ -44,13 +44,16 @@
   --s-6: 24px;
   --s-8: 32px;
 
-  /* Type scale */
-  --t-xs:  11px;
-  --t-sm:  12px;
-  --t-base: 14px;
-  --t-md:  15px;
-  --t-lg:  17px;
-  --t-xl:  20px;
+  /* Type scale — UI chrome */
+  --t-xs:  12px;
+  --t-sm:  13px;
+  --t-base: 15px;
+  --t-md:  16px;
+  --t-lg:  19px;
+  --t-xl:  22px;
+  /* Code reads fine at 13–14; UI scale is what was too tight. */
+  --t-code: 13px;
+  --t-code-sm: 12px;
 
   /* Radii */
   --r-1: 3px;
@@ -203,7 +206,7 @@ pre { margin: 0; }
 }
 .item-aid {
   font-family: var(--font-mono);
-  font-size: var(--t-sm);
+  font-size: var(--t-code);
   color: var(--c-fg);
   white-space: nowrap;
   overflow: hidden;
@@ -221,7 +224,7 @@ pre { margin: 0; }
 
 .item-metric {
   font-family: var(--font-mono);
-  font-size: var(--t-xs);
+  font-size: var(--t-code-sm);
   color: var(--c-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -340,10 +343,10 @@ pre { margin: 0; }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: var(--r-1);
   font-family: var(--font-mono);
-  font-size: var(--t-xs);
+  font-size: var(--t-code);
   font-variant-numeric: tabular-nums;
   background: var(--c-surface-2);
   color: var(--c-fg-2);
@@ -369,7 +372,7 @@ pre { margin: 0; }
 .section { margin-top: var(--s-5); }
 .section:first-child { margin-top: var(--s-2); }
 .section-title {
-  font-size: var(--t-xs);
+  font-size: var(--t-sm);
   font-weight: 600;
   color: var(--c-muted);
   text-transform: uppercase;
@@ -413,7 +416,7 @@ pre { margin: 0; }
   border-top: 1px solid var(--c-border);
   background: var(--c-surface);
   font-family: var(--font-mono);
-  font-size: var(--t-sm);
+  font-size: var(--t-code);
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -422,7 +425,7 @@ pre { margin: 0; }
   display: inline-block;
   margin-top: var(--s-3);
   margin-bottom: var(--s-2);
-  font-size: var(--t-xs);
+  font-size: var(--t-sm);
   font-weight: 600;
   color: var(--c-muted);
   text-transform: uppercase;
@@ -441,14 +444,14 @@ pre { margin: 0; }
   background: var(--c-mono-bg);
   padding: 1px 5px;
   border-radius: var(--r-1);
-  font-size: var(--t-sm);
+  font-size: var(--t-code);
 }
 .prompt-md pre {
   background: var(--c-mono-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--r-1);
   padding: var(--s-2) var(--s-3);
-  font-size: var(--t-sm);
+  font-size: var(--t-code);
   overflow-x: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -483,8 +486,8 @@ pre { margin: 0; }
   flex: 1;
   font: inherit;
   font-family: var(--font-mono);
-  font-size: var(--t-xs);
-  padding: 2px 6px;
+  font-size: var(--t-code);
+  padding: 3px 8px;
   background: var(--c-surface);
   border: 1px solid var(--c-border-2);
   border-radius: var(--r-1);
@@ -494,9 +497,9 @@ pre { margin: 0; }
 .codepane-status {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-family: var(--font-mono);
-  font-size: var(--t-xs);
+  font-size: var(--t-code);
   color: var(--c-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -504,11 +507,15 @@ pre { margin: 0; }
 .codepane-status.tone-good { color: var(--c-good); }
 .codepane-status.tone-warn { color: var(--c-warn); }
 .codepane-status.tone-bad  { color: var(--c-bad); }
+.codepane-status .status-tag {
+  color: var(--c-muted-2);
+  font-style: italic;
+}
 .codepane-body {
   margin: 0;
   padding: var(--s-3);
   font-family: var(--font-mono);
-  font-size: var(--t-sm);
+  font-size: var(--t-code);
   line-height: 1.55;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -535,7 +542,7 @@ pre { margin: 0; }
 }
 .dist {
   font-family: var(--font-mono);
-  font-size: var(--t-sm);
+  font-size: var(--t-code);
 }
 .dist-row {
   display: flex;
@@ -589,7 +596,7 @@ pre { margin: 0; }
   border: 1px solid var(--c-border);
   border-radius: var(--r-1);
   font-family: var(--font-mono);
-  font-size: var(--t-xs);
+  font-size: var(--t-code-sm);
   max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;
@@ -837,13 +844,14 @@ pre { margin: 0; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 4px 10px;
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-1);
   font-family: var(--font-mono);
-  font-size: var(--t-xs);
+  font-size: var(--t-code);
   color: var(--c-fg-2);
+  cursor: pointer;
 }
 .run-tab .rt-glyph { font-family: var(--font-mono); }
 .run-tab.tone-good { border-color: var(--c-good-bd); color: var(--c-good); }

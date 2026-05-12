@@ -115,24 +115,28 @@ function paneStatusEl(pane) {
   return pane.querySelector('.codepane-status');
 }
 
+function renderStatusInfo(info) {
+  if (!info) return '';
+  if (info.kind === 'gt') return '<span class="status-tag">reference</span>';
+  if (info.kind === 'tv') return '<span>TV=' + Number(info.tv).toFixed(2) + '</span>';
+  if (info.kind === 'label') return '<span>' + info.label + '</span>';
+  return '';
+}
+
 function applyPaneSelection(pane, key) {
   for (const pre of pane.querySelectorAll('[data-src]')) {
     pre.hidden = pre.dataset.src !== key;
   }
-  // Update status badge from atom's data-sources map.
   const atom = pane.closest('.atom');
   if (!atom) return;
   let map = {};
   try { map = JSON.parse(atom.dataset.sources || '{}'); } catch {}
-  const info = map[key] || { bucket: 'no-run', tone: 'muted' };
+  const entry = map[key];
+  const info = entry?.info ?? { kind: 'empty', tone: 'muted' };
   const statusEl = paneStatusEl(pane);
   if (statusEl) {
     statusEl.className = 'codepane-status tone-' + (info.tone || 'muted');
-    const tvStr = info.tv != null ? ' · TV=' + Number(info.tv).toFixed(2) : '';
-    statusEl.innerHTML =
-      '<span>' + (BUCKET_GLYPH[info.bucket] || '◌') + '</span>' +
-      '<span>' + info.bucket + '</span>' +
-      (tvStr ? '<span>' + tvStr + '</span>' : '');
+    statusEl.innerHTML = renderStatusInfo(info);
   }
 }
 
