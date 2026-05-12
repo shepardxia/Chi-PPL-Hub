@@ -74,13 +74,13 @@ export function renderDistViz(d: unknown, maxRows = 12): string | null {
     return (
       `<div class="dist-row">` +
       `<span class="lab" title="${escapeHtml(String(v))}">${escapeHtml(label)}</span>` +
-      `<span class="bar-track"><span class="bar-fill" style="width:${barPct.toFixed(1)}%"></span></span>` +
+      `<div class="bar-track"><div class="bar-fill" style="width:${barPct.toFixed(1)}%"></div></div>` +
       `<span class="pv">${p.toFixed(4)}</span>` +
       `</div>`
     );
   });
   const suffix = truncated
-    ? `<div class="dist-row"><span class="lab" style="color:var(--muted)">… ${pairs.length - maxRows} more</span></div>`
+    ? `<div class="dist-row more"><span class="lab">… ${pairs.length - maxRows} more</span></div>`
     : '';
-  return '<div class="dist-viz">' + rows.join('') + suffix + '</div>';
+  return '<div class="dist">' + rows.join('') + suffix + '</div>';
 }

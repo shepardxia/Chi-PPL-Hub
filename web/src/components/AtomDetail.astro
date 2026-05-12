@@ -1,0 +1,228 @@
+---
+import type { Atom, Bucket, ScoredRun } from '@/lib/types';
+import { bucketFor, shortMetric, toneFor, maxTV, glyphFor, descFor } from '@/lib/buckets';
+import { renderPrompt, renderDistViz, shapeLabel, truncate } from '@/lib/render';
+import { atomDomId } from '@/lib/atoms';
+import { SYSTEM_PROMPT_BASE, WEBPPL_PRIMER } from '@/lib/prompts';
+import FeedbackWidget from './FeedbackWidget.astro';
+
+interface RunEntry { runName: string; rec: ScoredRun; }
+
+interface Props {
+  atom: Atom;
+  runs: RunEntry[];
+  bucket: Bucket;
+  primaryRunName: string | null;
+  collectionSlug: string;
+  datasetVersion: string;
+}
+const { atom, runs, bucket, primaryRunName, collectionSlug, datasetVersion } = Astro.props;
+
+const tone = toneFor(bucket);
+const glyph = glyphFor(bucket);
+const bucketDesc = descFor(bucket);
+const metric = shortMetric(runs[0]?.rec ?? null);
+const shapeStr = shapeLabel(atom.answer_shape);
+
+const promptHtml = renderPrompt(atom.prompt);
+const gtCode = atom.groundtruth_code;
+const gtOut = atom.groundtruth_output;
+const gtOutStr = truncate(gtOut === undefined ? '(not cached)' : JSON.stringify(gtOut, null, 2), 4000);
+const gtViz = gtOut && typeof gtOut === 'object' ? renderDistViz(gtOut) : null;
+
+const initialLeft = 'gt';
+const initialRight = primaryRunName && runs.find((r) => r.runName === primaryRunName) ? primaryRunName : (runs[0]?.runName ?? 'gt');
+
+function paneOptions(activeKey: string) {
+  return [
+    { value: 'gt', label: 'groundtruth', selected: activeKey === 'gt' },
+    ...runs.map(({ runName }) => ({
+      value: runName,
+      label: runName,
+      selected: activeKey === runName,
+    })),
+  ];
+}
+
+const leftOptions = paneOptions(initialLeft);
+const rightOptions = paneOptions(initialRight);
+
+interface PaneSource { key: string; code: string; err?: string; bucketLabel: Bucket; tone: string; }
+
+const sources: PaneSource[] = [
+  { key: 'gt', code: gtCode, bucketLabel: 'no-run', tone: 'muted' },
+  ...runs.map(({ runName, rec }) => {
+    const b = bucketFor(rec);
+    return {
+      key: runName,
+      code: rec.generation?.code ?? '',
+      err: rec.evaluation?.gen?.error,
+      bucketLabel: b,
+      tone: toneFor(b),
+    };
+  }),
+];
+
+function statusFor(key: string): { tv: number | null; bucket: Bucket; tone: string } {
+  if (key === 'gt') return { tv: null, bucket: 'no-run', tone: 'muted' };
+  const entry = runs.find((r) => r.runName === key);
+  if (!entry) return { tv: null, bucket: 'no-run', tone: 'muted' };
+  const b = bucketFor(entry.rec);
+  return { tv: maxTV(entry.rec), bucket: b, tone: toneFor(b) };
+}
+
+const sourcesData = Object.fromEntries(
+  sources.map((s) => [s.key, { bucket: s.bucketLabel, tone: s.tone, err: s.err ?? '' }]),
+);
+---
+
+<section
+  class="atom"
+  id={atomDomId(atom.id)}
+  data-aid={atom.id}
+  data-bk={bucket}
+  data-tv={(() => {
+    const v = maxTV(runs[0]?.rec ?? null);
+    return v === null ? '' : v.toFixed(6);
+  })()}
+  data-search={[atom.id, atom.source ?? '', shapeStr, (atom.prompt ?? '').slice(0, 1000)].join(' ').toLowerCase()}
+  data-sources={JSON.stringify(sourcesData)}
+>
+  <div class="atom-head">
+    <div class="atom-head-row">
+      <span class="atom-id">{atom.id}</span>
+      <span class="atom-tags">
+        <span class="badge shape" title={`Answer shape: ${shapeStr} — drives which metrics are computed.`}>{shapeStr}</span>
+        {metric && (
+          <span class="badge numeric" title="Worst TV distance among this atom's sub-metrics, on the primary run.">{metric}</span>
+        )}
+        <span
+          class={`badge bucket-${tone}`}
+          title={`Bucket: ${bucket} — ${bucketDesc} (primary run)`}
+        >
+          <span class="glyph">{glyph}</span>
+          {bucket}
+        </span>
+        {runs.length > 0 && (
+          <span class="badge numeric" title={`${runs.length} LM run configuration${runs.length === 1 ? '' : 's'} scored this atom.`}>{runs.length} runs</span>
+        )}
+      </span>
+    </div>
+    {runs.length > 0 && (
+      <div class="runs-strip">
+        {runs.map(({ runName, rec }) => {
+          const rb = bucketFor(rec);
+          const rt = toneFor(rb);
+          const rg = glyphFor(rb);
+          return (
+            <span class={`run-tab tone-${rt}`} title={`${runName}: ${rb}`} data-run={runName}>
+              <span class="rt-glyph">{rg}</span>
+              {runName}
+            </span>
+          );
+        })}
+      </div>
+    )}
+  </div>
+
+  <div class="atom-body">
+    <section class="section">
+      <div class="section-title">Prompt</div>
+      <details class="sys-block">
+        <summary>
+          <span class="sys-tag">system</span> base instructions
+          <span class="sys-meta">used by every run</span>
+        </summary>
+        <pre>{SYSTEM_PROMPT_BASE}</pre>
+      </details>
+      <details class="sys-block">
+        <summary>
+          <span class="sys-tag">system</span> WebPPL primer
+          <span class="sys-meta">appended on <span class="mono">*-primer-*</span> runs only</span>
+        </summary>
+        <pre>{WEBPPL_PRIMER}</pre>
+      </details>
+      <div class="user-msg-label">User message</div>
+      <Fragment set:html={promptHtml} />
+    </section>
+
+    <section class="section">
+      <div class="section-title">Code comparison</div>
+      <div class="compare">
+        <div class="codepane" data-pane="left">
+          <div class="codepane-head">
+            <select class="codepane-select" data-pane="left">
+              {leftOptions.map((o) => (
+                <option value={o.value} selected={o.selected}>{o.label}</option>
+              ))}
+            </select>
+            {(() => {
+              const s = statusFor(initialLeft);
+              return (
+                <span class={`codepane-status tone-${s.tone}`}>
+                  <span>{glyphFor(s.bucket)}</span>
+                  <span>{s.bucket}</span>
+                  {s.tv !== null && <span>· TV={s.tv.toFixed(2)}</span>}
+                </span>
+              );
+            })()}
+          </div>
+          {sources.map((s) => (
+            <Fragment>
+              {s.err && (
+                <pre class="codepane-err" data-src={s.key} hidden={s.key !== initialLeft}>{String(s.err).slice(0, 600)}</pre>
+              )}
+              <pre class="codepane-body" data-src={s.key} hidden={s.key !== initialLeft}>{s.code}</pre>
+            </Fragment>
+          ))}
+        </div>
+        <div class="codepane" data-pane="right">
+          <div class="codepane-head">
+            <select class="codepane-select" data-pane="right">
+              {rightOptions.map((o) => (
+                <option value={o.value} selected={o.selected}>{o.label}</option>
+              ))}
+            </select>
+            {(() => {
+              const s = statusFor(initialRight);
+              return (
+                <span class={`codepane-status tone-${s.tone}`}>
+                  <span>{glyphFor(s.bucket)}</span>
+                  <span>{s.bucket}</span>
+                  {s.tv !== null && <span>· TV={s.tv.toFixed(2)}</span>}
+                </span>
+              );
+            })()}
+          </div>
+          {sources.map((s) => (
+            <Fragment>
+              {s.err && (
+                <pre class="codepane-err" data-src={s.key} hidden={s.key !== initialRight}>{String(s.err).slice(0, 600)}</pre>
+              )}
+              <pre class="codepane-body" data-src={s.key} hidden={s.key !== initialRight}>{s.code}</pre>
+            </Fragment>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Groundtruth output</div>
+      <div class="output-box">
+        {gtViz ? (
+          <Fragment>
+            <Fragment set:html={gtViz} />
+            <details class="gt-raw">
+              <summary>raw JSON</summary>
+              <pre>{gtOutStr}</pre>
+            </details>
+          </Fragment>
+        ) : (
+          <pre class="gt-raw"><Fragment>{gtOutStr}</Fragment></pre>
+        )}
+      </div>
+    </section>
+
+    <FeedbackWidget atomId={atom.id} collectionSlug={collectionSlug} datasetVersion={datasetVersion} />
+  </div>
+</section>

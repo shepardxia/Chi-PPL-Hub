@@ -1,16 +1,16 @@
 import type { Bucket, ScoredRun } from './types';
 
-export const BUCKETS: { label: Bucket; tone: 'good' | 'warn' | 'bad' | 'muted'; desc: string }[] = [
-  { label: 'TV=0',   tone: 'good',  desc: 'TV exactly 0 (matched)' },
-  { label: 'TV<.05', tone: 'good',  desc: 'TV < 0.05' },
-  { label: 'TV<.5',  tone: 'warn',  desc: 'TV < 0.5' },
-  { label: 'TV<1',   tone: 'warn',  desc: '0.5 ≤ TV < 1' },
-  { label: 'TV=1',   tone: 'bad',   desc: 'TV exactly 1 (full disagreement)' },
-  { label: 'val+',   tone: 'good',  desc: 'value match (approx)' },
-  { label: 'val-',   tone: 'bad',   desc: 'value mismatch' },
-  { label: 'shape!', tone: 'bad',   desc: 'shape mismatch' },
-  { label: 'fail',   tone: 'bad',   desc: 'execution failure' },
-  { label: 'no-run', tone: 'muted', desc: 'no run available' },
+export const BUCKETS: { label: Bucket; tone: 'good' | 'warn' | 'bad' | 'muted'; glyph: string; desc: string }[] = [
+  { label: 'TV=0',   tone: 'good',  glyph: '●',  desc: 'TV exactly 0 (matched)' },
+  { label: 'TV<.05', tone: 'good',  glyph: '○',  desc: 'TV < 0.05 (very close)' },
+  { label: 'TV<.5',  tone: 'warn',  glyph: '◐',  desc: 'TV < 0.5' },
+  { label: 'TV<1',   tone: 'warn',  glyph: '◑',  desc: '0.5 ≤ TV < 1' },
+  { label: 'TV=1',   tone: 'bad',   glyph: '■',  desc: 'TV exactly 1 (full disagreement)' },
+  { label: 'val+',   tone: 'good',  glyph: '✓',  desc: 'value match (approx)' },
+  { label: 'val-',   tone: 'bad',   glyph: '✗',  desc: 'value mismatch' },
+  { label: 'shape!', tone: 'bad',   glyph: '!',  desc: 'shape mismatch' },
+  { label: 'fail',   tone: 'bad',   glyph: '×',  desc: 'execution failure' },
+  { label: 'no-run', tone: 'muted', glyph: '◌',  desc: 'no run available' },
 ];
 
 export function tvValues(rec: ScoredRun | undefined | null): number[] {
@@ -62,6 +62,10 @@ export function toneFor(bucket: Bucket): 'good' | 'warn' | 'bad' | 'muted' {
   return BUCKETS.find((b) => b.label === bucket)?.tone ?? 'muted';
 }
 
-export function barClassFor(bucket: Bucket): string {
-  return 'b-' + toneFor(bucket);
+export function glyphFor(bucket: Bucket): string {
+  return BUCKETS.find((b) => b.label === bucket)?.glyph ?? '◌';
+}
+
+export function descFor(bucket: Bucket): string {
+  return BUCKETS.find((b) => b.label === bucket)?.desc ?? '';
 }

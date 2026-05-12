@@ -1,9 +1,9 @@
 ---
 import Layout from '@/layouts/Layout.astro';
-import AtomCard from '@/components/AtomCard.astro';
+import AtomDetail from '@/components/AtomDetail.astro';
 import NameModal from '@/components/NameModal.astro';
 import { COLLECTIONS, loadCollection, primaryRunFor, groupKey } from '@/lib/atoms';
-import { BUCKETS, bucketFor, barClassFor } from '@/lib/buckets';
+import { BUCKETS, bucketFor, glyphFor, toneFor, shortMetric } from '@/lib/buckets';
 import type { Atom, Bucket, ScoredRun } from '@/lib/types';
 
 export const prerender = true;
@@ -16,7 +16,6 @@ const { slug } = Astro.params;
 const data = (await loadCollection(slug!))!;
 const primaryName = primaryRunFor(data);
 const primaryRun: Record<string, ScoredRun> = primaryName ? data.runs[primaryName] : {};
-
 const runEntries = Object.entries(data.runs);
 
 function runsFor(atomId: string): { runName: string; rec: ScoredRun }[] {
@@ -34,110 +33,159 @@ function runsFor(atomId: string): { runName: string; rec: ScoredRun }[] {
 const primaryBucket = new Map<string, Bucket>();
 for (const a of data.atoms) primaryBucket.set(a.id, bucketFor(primaryRun[a.id]));
 
-interface PreparedGroup {
-  key: string;
-  atoms: Atom[];
-  segs: Record<string, number>;
-  tail: string;
-}
-
 const groupedMap = new Map<string, Atom[]>();
 for (const atom of data.atoms) {
   const k = groupKey(atom);
   if (!groupedMap.has(k)) groupedMap.set(k, []);
   groupedMap.get(k)!.push(atom);
 }
+const groupKeys = Array.from(groupedMap.keys()).sort();
 
-const preparedGroups: PreparedGroup[] = Array.from(groupedMap.keys())
-  .sort()
-  .map((key) => {
-    const atoms = groupedMap.get(key)!;
-    const segs: Record<string, number> = {};
-    for (const a of atoms) {
-      const cls = barClassFor(primaryBucket.get(a.id)!);
-      segs[cls] = (segs[cls] ?? 0) + 1;
-    }
-    const nGood = segs['b-good'] ?? 0;
-    const nBad = segs['b-bad'] ?? 0;
-    const tail = (nGood || nBad) ? `${nGood}✓ · ${nBad}✗` : `${atoms.length}`;
-    return { key, atoms, segs, tail };
+interface PreparedItem {
+  atom: Atom;
+  bucket: Bucket;
+  tone: string;
+  glyph: string;
+  metric: string;
+  search: string;
+}
+interface PreparedGroup {
+  key: string;
+  items: PreparedItem[];
+  good: number;
+  bad: number;
+}
+
+const preparedGroups: PreparedGroup[] = groupKeys.map((key) => {
+  const grpAtoms = groupedMap.get(key)!;
+  let good = 0, bad = 0;
+  const items: PreparedItem[] = grpAtoms.map((atom) => {
+    const bucket = primaryBucket.get(atom.id)!;
+    const tone = toneFor(bucket);
+    if (tone === 'good') good++;
+    else if (tone === 'bad') bad++;
+    return {
+      atom,
+      bucket,
+      tone,
+      glyph: glyphFor(bucket),
+      metric: shortMetric(primaryRun[atom.id]),
+      search: [atom.id, atom.source ?? '', (atom.prompt ?? '').slice(0, 400)].join(' ').toLowerCase(),
+    };
   });
+  return { key, items, good, bad };
+});
 
 const bucketCounts: Record<string, number> = {};
 for (const b of primaryBucket.values()) bucketCounts[b] = (bucketCounts[b] ?? 0) + 1;
+
 const scoreable = data.atoms.length
   - (bucketCounts['shape!'] ?? 0)
   - (bucketCounts['fail'] ?? 0)
   - (bucketCounts['no-run'] ?? 0);
 
 const datasetVersion = data.collection.slug;
-const barOrder = ['b-good', 'b-warn', 'b-bad', 'b-muted'];
+const firstAtomId = data.atoms[0]?.id ?? '';
 ---
 
 <Layout title={`${data.collection.label} — ppl-gym`}>
-  <header class="site">
-    <div class="row1">
-      <h1><a href="/" style="color:inherit">ppl-gym</a></h1>
-      <span class="crumbs">/ {data.collection.label}</span>
-      <span class="crumbs" style="margin-left:auto;font-size:11px">
-        press <code>/</code> to search · <code>j</code>/<code>k</code> navigate · <code>esc</code> clear
-      </span>
-    </div>
-    <div class="summary">
-      <b>{data.atoms.length}</b> atoms ·
-      <b>{scoreable}</b> scoreable ({data.atoms.length ? Math.round((100 * scoreable) / data.atoms.length) : 0}%) ·
-      showing <b id="visible-count">{data.atoms.length}</b>
-    </div>
-    <div class="filterbar">
-      <span class="label">bucket</span>
-      {BUCKETS.filter((b) => (bucketCounts[b.label] ?? 0) > 0).map((b) => (
-        <span class={`pill ${b.tone}-tone`} data-bk={b.label} title={b.desc}>
-          {b.label} <span class="count">{bucketCounts[b.label]}</span>
-        </span>
-      ))}
-      <button id="expand-all" class="pill" type="button" style="margin-left:8px">expand all</button>
-      <button id="collapse-all" class="pill" type="button">collapse all</button>
-      <select id="sort" style="margin-left:8px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:#fff">
-        <option value="aid">sort: id</option>
-        <option value="bucket">sort: bucket (worst→best)</option>
-        <option value="tv-desc">sort: TV high→low</option>
-        <option value="tv-asc">sort: TV low→high</option>
-      </select>
-      <input id="search" type="search" placeholder="search id / source / shape / prompt..." />
-    </div>
-  </header>
+  <div class="app">
 
-  <main>
-    <div id="empty-msg" class="empty" style="display:none">No atoms match the current filter.</div>
+    <aside class="rail">
+      <div class="rail-head">
+        <div class="rail-title-row">
+          <span class="rail-title"><a href="/">ppl-gym</a></span>
+          <span class="rail-crumb">/ {data.collection.label}</span>
+        </div>
+        <div class="rail-stat">
+          <b>{data.atoms.length}</b> atoms ·
+          <b>{scoreable}</b> scoreable ·
+          showing <b id="visible-count">{data.atoms.length}</b>
+        </div>
+      </div>
 
-    {preparedGroups.map((grp) => (
-      <details class="group" data-key={grp.key}>
-        <summary>
-          <span class="group-name">{grp.key}</span>
-          <span class="group-count">{grp.atoms.length} atom{grp.atoms.length !== 1 ? 's' : ''}</span>
-          <span class="group-bar">
-            {barOrder.map((cls) =>
-              (grp.segs[cls] ?? 0) > 0 ? <span class={cls} style={`flex:${grp.segs[cls]}`}></span> : null,
-            )}
-          </span>
-          <span class="group-tail">{grp.tail}</span>
-        </summary>
-        <div class="group-body">
-          {grp.atoms.map((atom) => (
-            <AtomCard
-              atom={atom}
-              runs={runsFor(atom.id)}
-              bucket={primaryBucket.get(atom.id)!}
-              collectionSlug={data.collection.slug}
-              datasetVersion={datasetVersion}
-            />
+      <div class="rail-filter">
+        <input id="search" class="rail-search" type="search" placeholder="Search id, source, prompt…" />
+        <div class="bucket-pills">
+          <div class="legend">
+            <button type="button" id="legend-toggle" class="legend-trigger" aria-label="Bucket legend" title="What do the buckets mean?">?</button>
+            <div class="legend-panel" id="legend-panel" hidden>
+              <h3>Buckets (primary run)</h3>
+              {BUCKETS.filter((b) => (bucketCounts[b.label] ?? 0) > 0).map((b) => (
+                <div class="legend-row">
+                  <span class={`item-dot ${b.tone}`}>{b.glyph}</span>
+                  <span class="lg-name">{b.label}</span>
+                  <span class="lg-desc">{b.desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {BUCKETS.filter((b) => (bucketCounts[b.label] ?? 0) > 0).map((b) => (
+            <button
+              type="button"
+              class={`pill tone-${b.tone}`}
+              data-bk={b.label}
+              title={b.desc}
+            >
+              <span class="pill-glyph">{b.glyph}</span>
+              <span>{b.label}</span>
+              <span class="pill-count">{bucketCounts[b.label]}</span>
+            </button>
           ))}
         </div>
-      </details>
-    ))}
-  </main>
+      </div>
+
+      <div class="list-scroll" id="list-scroll">
+        {preparedGroups.map((grp) => (
+          <Fragment>
+            <div class="group-head" data-group={grp.key}>
+              <span>{grp.key}</span>
+              <span class="group-stats">{grp.good}✓ · {grp.bad}✗ · {grp.items.length}</span>
+            </div>
+            {grp.items.map((it) => (
+              <div
+                class="item"
+                data-aid={it.atom.id}
+                data-bk={it.bucket}
+                data-search={it.search}
+                data-group={grp.key}
+              >
+                <span class={`item-dot ${it.tone}`} title={it.bucket}>{it.glyph}</span>
+                <span class="item-main">
+                  <span class="item-aid">{it.atom.id}</span>
+                  <span class="item-sub">{it.atom.source ?? ''}</span>
+                </span>
+                <span class="item-metric">{it.metric}</span>
+              </div>
+            ))}
+          </Fragment>
+        ))}
+      </div>
+    </aside>
+
+    <main class="detail" id="detail">
+      <div class="detail-empty" id="detail-empty">Select an atom from the list →</div>
+      {data.atoms.map((atom) => (
+        <AtomDetail
+          atom={atom}
+          runs={runsFor(atom.id)}
+          bucket={primaryBucket.get(atom.id)!}
+          primaryRunName={primaryName}
+          collectionSlug={data.collection.slug}
+          datasetVersion={datasetVersion}
+        />
+      ))}
+    </main>
+
+  </div>
 
   <NameModal />
+
+  <script type="application/json" id="ppl-meta" set:html={JSON.stringify({
+    slug: data.collection.slug,
+    firstAtomId,
+  })}></script>
+
   <script src="/browse.js" is:inline></script>
   <script src="/feedback.js" is:inline></script>
 </Layout>

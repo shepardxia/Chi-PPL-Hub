@@ -1,12 +1,10 @@
 ---
-// Lazy-registration modal: shown on first feedback action when no name
-// is stored in localStorage. Stores name + a stable rater_id.
 ---
 
 <div class="modal-back" id="name-modal" role="dialog" aria-labelledby="name-modal-title">
   <div class="modal">
-    <h2 id="name-modal-title">What should we credit your feedback as?</h2>
-    <p>Your name will be attached to this and future feedback you give from this browser. No login, no email.</p>
+    <h2 id="name-modal-title">Credit your feedback as?</h2>
+    <p>Stays attached to feedback you give from this browser. No login, no email.</p>
     <input type="text" id="name-modal-input" maxlength="60" placeholder="e.g. shepard" autocomplete="off" />
     <div class="modal-buttons">
       <button type="button" id="name-modal-cancel">cancel</button>

@@ -7,30 +7,30 @@ interface Props {
 const { atomId, collectionSlug, datasetVersion } = Astro.props;
 ---
 
-<div
-  class="fb section"
+<section
+  class="fb"
   data-fb-atom={atomId}
   data-fb-collection={collectionSlug}
   data-fb-dataset-version={datasetVersion}
 >
-  <div class="section-title">feedback</div>
+  <div class="section-title">Feedback</div>
   <div class="fb-row">
-    <button type="button" class="fb-btn is-up" data-vote="up" aria-label="Thumbs up">
-      <span>👍</span><span class="fb-vote-label">looks right</span>
+    <button type="button" class="fb-btn is-up" data-vote="up" aria-label="Looks right">
+      <span>👍</span><span>looks right</span>
     </button>
-    <button type="button" class="fb-btn is-down" data-vote="down" aria-label="Thumbs down">
-      <span>👎</span><span class="fb-vote-label">issue</span>
+    <button type="button" class="fb-btn is-down" data-vote="down" aria-label="Issue">
+      <span>👎</span><span>issue</span>
     </button>
     <span class="fb-name">
-      <span class="fb-name-empty">not signed</span>
+      <span class="fb-name-empty">no name set</span>
       <span class="fb-name-filled" hidden>rating as <b class="fb-name-text"></b><span class="fb-edit">✎</span></span>
     </span>
   </div>
   <div class="fb-comment">
-    <textarea placeholder="optional note (will be saved alongside your vote)…"></textarea>
+    <textarea placeholder="optional note — submitted with your vote, or saved as a standalone comment…"></textarea>
     <div class="fb-comment-row">
-      <button type="button" class="fb-btn fb-submit">save comment</button>
+      <button type="button" class="fb-btn fb-primary fb-submit">save comment</button>
       <span class="fb-status"></span>
     </div>
   </div>
-</div>
+</section>
