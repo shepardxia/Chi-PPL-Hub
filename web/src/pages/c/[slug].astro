@@ -48,6 +48,7 @@ interface PreparedItem {
   glyph: string;
   metric: string;
   search: string;
+  shortLabel: string;
 }
 interface PreparedGroup {
   key: string;
@@ -64,6 +65,11 @@ const preparedGroups: PreparedGroup[] = groupKeys.map((key) => {
     const tone = toneFor(bucket);
     if (tone === 'good') good++;
     else if (tone === 'bad') bad++;
+    // Atom IDs look like `probmods2-agents-as-programs/ex1.b`. The prefix
+    // is already implied by the group header, so the row label is just
+    // the suffix after the first slash.
+    const slashIdx = atom.id.indexOf('/');
+    const shortLabel = slashIdx >= 0 ? atom.id.slice(slashIdx + 1) : atom.id;
     return {
       atom,
       bucket,
@@ -71,6 +77,7 @@ const preparedGroups: PreparedGroup[] = groupKeys.map((key) => {
       glyph: glyphFor(bucket),
       metric: shortMetric(primaryRun[atom.id]),
       search: [atom.id, atom.source ?? '', (atom.prompt ?? '').slice(0, 400)].join(' ').toLowerCase(),
+      shortLabel,
     };
   });
   return { key, items, good, bad };
@@ -149,12 +156,10 @@ const firstAtomId = data.atoms[0]?.id ?? '';
                 data-bk={it.bucket}
                 data-search={it.search}
                 data-group={grp.key}
+                title={it.atom.id}
               >
                 <span class={`item-dot ${it.tone}`} title={it.bucket}>{it.glyph}</span>
-                <span class="item-main">
-                  <span class="item-aid">{it.atom.id}</span>
-                  <span class="item-sub">{it.atom.source ?? ''}</span>
-                </span>
+                <span class="item-main">{it.shortLabel}</span>
                 <span class="item-metric">{it.metric}</span>
               </div>
             ))}
