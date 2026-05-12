@@ -1,225 +1,356 @@
 ---
-import type { Atom, Bucket, ScoredRun } from '@/lib/types';
-import { bucketFor, shortMetric, toneFor, maxTV, glyphFor, descFor } from '@/lib/buckets';
-import { renderPrompt, renderDistViz, shapeLabel, truncate } from '@/lib/render';
-import { atomDomId } from '@/lib/atoms';
-import { SYSTEM_PROMPT_BASE, WEBPPL_PRIMER } from '@/lib/prompts';
-import FeedbackWidget from './FeedbackWidget.astro';
-
-interface RunEntry { runName: string; rec: ScoredRun; }
+import type { Atom, Bucket, ScoredRun, RunMeta, RenderOutput } from '@/lib/types';
+import { bucketFor, fmtTV, fmtKL, glyphFor, toneFor, descFor, maxTV, maxKL, BUCKET_BY_ID } from '@/lib/buckets';
+import {
+  renderMarkdown, renderCode, renderChart, renderValueOutput,
+  normalizeOutput, shapeLabel, atomDomId, isDistLike, truncateOutput,
+} from '@/lib/render';
+import { atomLeaf, atomPrefix } from '@/lib/atoms';
 
 interface Props {
   atom: Atom;
-  runs: RunEntry[];
-  bucket: Bucket;
-  primaryRunName: string | null;
+  runs: RunMeta[];
+  perAtomRuns: Record<string, ScoredRun>;  // runId -> scored record for THIS atom
+  primary: RunMeta | null;
   collectionSlug: string;
-  datasetVersion: string;
 }
-const { atom, runs, bucket, primaryRunName, collectionSlug, datasetVersion } = Astro.props;
+const { atom, runs, perAtomRuns, primary, collectionSlug } = Astro.props;
 
-const tone = toneFor(bucket);
-const glyph = glyphFor(bucket);
-const bucketDesc = descFor(bucket);
-const metric = shortMetric(runs[0]?.rec ?? null);
 const shapeStr = shapeLabel(atom.answer_shape);
-
-const promptHtml = renderPrompt(atom.prompt);
+const promptHtml = renderMarkdown(atom.prompt);
 const gtCode = atom.groundtruth_code;
-const gtOut = atom.groundtruth_output;
-const gtOutStr = truncate(gtOut === undefined ? '(not cached)' : JSON.stringify(gtOut, null, 2), 4000);
-const gtViz = gtOut && typeof gtOut === 'object' ? renderDistViz(gtOut) : null;
+const gtOutput: RenderOutput = truncateOutput(normalizeOutput(atom.groundtruth_output, atom.answer_shape));
 
-const initialLeft = 'gt';
-const initialRight = primaryRunName && runs.find((r) => r.runName === primaryRunName) ? primaryRunName : (runs[0]?.runName ?? 'gt');
-
-function paneOptions(activeKey: string) {
-  return [
-    { value: 'gt', label: 'groundtruth', selected: activeKey === 'gt' },
-    ...runs.map(({ runName }) => ({
-      value: runName,
-      label: runName,
-      selected: activeKey === runName,
-    })),
-  ];
+interface SourceData {
+  key: string;             // 'gt' | runId
+  label: string;
+  short: string;
+  code: string;
+  output: RenderOutput;
+  error: string | null;
+  bucket: Bucket | null;   // null for gt
+  tv: number | null;
+  kl: number | null;
 }
 
-const leftOptions = paneOptions(initialLeft);
-const rightOptions = paneOptions(initialRight);
+const gtSrc: SourceData = {
+  key: 'gt', label: 'ground truth', short: 'GT',
+  code: gtCode, output: gtOutput, error: null,
+  bucket: null, tv: null, kl: null,
+};
 
-interface PaneSource { key: string; code: string; err?: string; bucketLabel: Bucket; tone: string; }
+const runSources: SourceData[] = runs.map((r) => {
+  const rec = perAtomRuns[r.id];
+  const bucket = bucketFor(rec);
+  return {
+    key: r.id,
+    label: r.label,
+    short: r.short,
+    code: rec?.generation?.code ?? '',
+    output: rec ? truncateOutput(normalizeOutput(rec.evaluation?.gen?.answer, atom.answer_shape)) : null,
+    error: rec?.evaluation?.gen?.error ?? null,
+    bucket,
+    tv: maxTV(rec),
+    kl: maxKL(rec),
+  };
+});
 
-const sources: PaneSource[] = [
-  { key: 'gt', code: gtCode, bucketLabel: 'no-run', tone: 'muted' },
-  ...runs.map(({ runName, rec }) => {
-    const b = bucketFor(rec);
-    return {
-      key: runName,
-      code: rec.generation?.code ?? '',
-      err: rec.evaluation?.gen?.error,
-      bucketLabel: b,
-      tone: toneFor(b),
-    };
-  }),
-];
+const sourcesById: Record<string, SourceData> = { gt: gtSrc };
+for (const s of runSources) sourcesById[s.key] = s;
 
-interface StatusInfo { kind: 'gt' | 'tv' | 'label' | 'empty'; tv?: number; label?: string; tone: string; }
+// Default compare: GT (A) vs primary run (B).
+const primaryId = primary?.id ?? runs[0]?.id ?? null;
+const defaultA = 'gt';
+const defaultB = primaryId && sourcesById[primaryId] ? primaryId : (runs[0]?.id ?? 'gt');
 
-function statusFor(key: string): StatusInfo {
-  if (key === 'gt') return { kind: 'gt', tone: 'muted' };
-  const entry = runs.find((r) => r.runName === key);
-  if (!entry) return { kind: 'empty', tone: 'muted' };
-  const b = bucketFor(entry.rec);
-  const tone = toneFor(b);
-  const tv = maxTV(entry.rec);
-  if (tv !== null) return { kind: 'tv', tv, tone };
-  return { kind: 'label', label: b, tone };
+const A = sourcesById[defaultA];
+const B = sourcesById[defaultB];
+
+const primaryRec = primary ? perAtomRuns[primary.id] : undefined;
+const primaryBucket = bucketFor(primaryRec);
+const primaryTone = toneFor(primaryBucket);
+const primaryDesc = descFor(primaryBucket);
+const primaryGlyph = glyphFor(primaryBucket);
+
+const totalRuns = runs.filter((r) => perAtomRuns[r.id]).length;
+
+function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
+  const tagClass = side === 'a' ? 'tag-a' : 'tag-b';
+  let body: string;
+  if (src.error) {
+    body = (
+      `<div class="compare-error">` +
+      `<div class="compare-error-hd">execution error</div>` +
+      `<pre class="compare-error-msg">${escape(src.error)}</pre>` +
+      (src.code ? renderCode(src.code, 'webppl') : '') +
+      `</div>`
+    );
+  } else if (src.code) {
+    body = renderCode(src.code, 'webppl');
+  } else {
+    body = `<div class="out-empty">(no code — this run didn't score this atom)</div>`;
+  }
+  const bucketBadge = src.bucket
+    ? renderBucketBadge(src.bucket, src.tv, 'xs', true)
+    : '';
+  return (
+    `<div class="compare-col">` +
+      `<div class="compare-col-hd">` +
+        `<span class="compare-col-tag ${tagClass}">${escape(src.short)}</span>` +
+        `<span class="compare-col-label">${escape(src.label)}</span>` +
+        bucketBadge +
+      `</div>` +
+      body +
+    `</div>`
+  );
 }
 
-function renderStatus(info: StatusInfo): string {
-  if (info.kind === 'gt') return '<span class="status-tag">reference</span>';
-  if (info.kind === 'tv') return `<span>TV=${info.tv!.toFixed(2)}</span>`;
-  if (info.kind === 'label') return `<span>${info.label}</span>`;
-  return '';
+function renderBucketBadge(b: Bucket, tv: number | null, size: 'xs' | 'sm' = 'sm', showTv = false): string {
+  const def = BUCKET_BY_ID[b];
+  if (!def) return '';
+  const tvBit = showTv && tv != null ? `<span class="bucket-tv">${fmtTV(tv)}</span>` : '';
+  return (
+    `<span class="bucket bucket-${def.tone} bucket-${size}">` +
+      `<span class="bucket-glyph">${def.glyph}</span>` +
+      `<span class="bucket-label">${def.label}</span>` +
+      tvBit +
+    `</span>`
+  );
 }
 
-const sourcesData = Object.fromEntries(
-  sources.map((s) => {
-    const info = statusFor(s.key);
-    return [s.key, { info, err: s.err ?? '' }];
-  }),
+function escape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Pre-render the default compare body (code panes + chart).
+const compareGridHtml = compareColHtml(A, 'a') + compareColHtml(B, 'b');
+
+const distLike = isDistLike(A.output) || isDistLike(B.output);
+let chartSectionHtml = '';
+if (distLike) {
+  const aSeries = isDistLike(A.output) ? A.output : null;
+  const bSeries = isDistLike(B.output) ? B.output : null;
+  chartSectionHtml = (
+    `<div class="compare-chart">` +
+      `<div class="section-title">` +
+        `<span class="section-title-num">02</span>` +
+        `<span>output overlay</span>` +
+        `<span class="section-title-meta">${escape(shapeStr)}</span>` +
+      `</div>` +
+      renderChart({ a: aSeries, b: bSeries, labelA: A.short, labelB: B.short }) +
+    `</div>`
+  );
+} else if (A.output || B.output) {
+  chartSectionHtml = (
+    `<div class="compare-chart">` +
+      `<div class="section-title">` +
+        `<span class="section-title-num">02</span>` +
+        `<span>output</span>` +
+        `<span class="section-title-meta">${escape(shapeStr)}</span>` +
+      `</div>` +
+      `<div class="compare-grid">` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">${escape(A.short)}</span></div>${renderValueOutput(A.output)}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">${escape(B.short)}</span></div>${renderValueOutput(B.output, A.output ? '(run produced no output)' : '')}</div>` +
+      `</div>` +
+    `</div>`
+  );
+}
+
+// Run-pill strip data
+const runPills = runs.map((r) => {
+  const rec = perAtomRuns[r.id];
+  const b = bucketFor(rec);
+  const tv = maxTV(rec);
+  return {
+    id: r.id,
+    short: r.short,
+    label: r.label,
+    bucket: b,
+    tone: toneFor(b),
+    glyph: glyphFor(b),
+    tv,
+  };
+});
+
+// Embed per-source data for client re-rendering on source change.
+const sourcePayload = Object.fromEntries(
+  Object.entries(sourcesById).map(([k, s]) => [k, {
+    short: s.short,
+    label: s.label,
+    code: s.code,
+    output: s.output,
+    error: s.error,
+    bucket: s.bucket,
+    tv: s.tv,
+    kl: s.kl,
+  }]),
 );
 ---
 
-<section
-  class="atom"
-  id={atomDomId(atom.id)}
-  data-aid={atom.id}
-  data-bk={bucket}
-  data-tv={(() => {
-    const v = maxTV(runs[0]?.rec ?? null);
-    return v === null ? '' : v.toFixed(6);
-  })()}
-  data-search={[atom.id, atom.source ?? '', shapeStr, (atom.prompt ?? '').slice(0, 1000)].join(' ').toLowerCase()}
-  data-sources={JSON.stringify(sourcesData)}
->
-  <div class="atom-head">
-    <div class="atom-head-row">
-      <span class="atom-id">{atom.id}</span>
-      <span class="atom-tags">
-        <span class="badge shape" data-tip={`Answer shape: ${shapeStr}\nDrives which metrics are computed.`}>{shapeStr}</span>
-        {metric && (
-          <span class="badge numeric" data-tip="Worst TV distance among this atom's sub-metrics, on the primary run.">{metric}</span>
-        )}
-        <span
-          class={`badge bucket-${tone}`}
-          data-tip={`Bucket ${bucket}: ${bucketDesc}\n(primary run)`}
-        >
-          <span class="glyph">{glyph}</span>
-          {bucket}
+<section class="detail" id={atomDomId(atom.id)} data-aid={atom.id}>
+  <div class="detail-hd">
+    <div class="detail-hd-top">
+      <div class="detail-hd-id">
+        <span class="detail-hd-source">{atomPrefix(atom.id)}</span>
+        {atomPrefix(atom.id) && <span class="detail-hd-slash">/</span>}
+        <span class="detail-hd-name">{atomLeaf(atom.id)}</span>
+      </div>
+      <div class="detail-hd-meta">
+        <span class="meta-pill">
+          <span class="meta-pill-key">shape</span>
+          <span class="meta-pill-val">{shapeStr}</span>
         </span>
-        {runs.length > 0 && (
-          <span class="badge numeric" data-tip={`${runs.length} LM run configuration${runs.length === 1 ? '' : 's'} scored this atom.\nClick a run chip below or use the dropdowns to compare.`}>{runs.length} runs</span>
+        {primary && (
+          <span class="meta-pill" title="primary-run bucket">
+            <span class="meta-pill-key">{primary.short}</span>
+            <Fragment set:html={renderBucketBadge(primaryBucket, maxTV(primaryRec), 'sm', true)} />
+          </span>
         )}
-      </span>
+        <span class="meta-pill">
+          <span class="meta-pill-key">runs</span>
+          <span class="meta-pill-val">{totalRuns}/{runs.length}</span>
+        </span>
+      </div>
     </div>
-    {runs.length > 0 && (
-      <div class="runs-strip">
-        {runs.map(({ runName, rec }) => {
-          const rb = bucketFor(rec);
-          const rt = toneFor(rb);
-          const rg = glyphFor(rb);
+
+    <div class="detail-hd-strip">
+      <span class="detail-hd-strip-lbl">per-run</span>
+      {runPills.map((p) => (
+        <button
+          type="button"
+          class={`run-pill bucket-${p.tone}${defaultB === p.id ? ' is-source-b' : ''}${defaultA === p.id ? ' is-source-a' : ''}`}
+          data-source={p.id}
+          title={`${p.label} — ${BUCKET_BY_ID[p.bucket]?.label}${p.tv != null ? ` · TV=${fmtTV(p.tv)}` : ''}\nclick: set as B (right) · shift-click: set as A (left)`}>
+          <span class="run-pill-glyph">{p.glyph}</span>
+          <span class="run-pill-name">{p.short}</span>
+          {p.tv != null && <span class="run-pill-tv">{fmtTV(p.tv)}</span>}
+        </button>
+      ))}
+      <button
+        type="button"
+        class={`run-pill run-pill-gt${defaultA === 'gt' ? ' is-source-a' : ''}${defaultB === 'gt' ? ' is-source-b' : ''}`}
+        data-source="gt"
+        title="ground truth\nclick: set as A (left) · shift-click: set as B (right)">
+        <span class="run-pill-glyph">●</span>
+        <span class="run-pill-name">GT</span>
+      </button>
+    </div>
+  </div>
+
+  <section class="detail-section">
+    <div class="section-title">
+      <span class="section-title-num">00</span>
+      <span>prompt</span>
+    </div>
+    <div class="prompt-card">
+      <Fragment set:html={promptHtml} />
+    </div>
+    <div class="context-row">
+      <details class="collapse">
+        <summary>
+          <span class="collapse-title">system prompt</span>
+          <span class="collapse-meta">constant across atoms</span>
+        </summary>
+        <div class="collapse-body"><pre class="ctx-pre" data-sysprompt-placeholder>(system prompt loads here)</pre></div>
+      </details>
+      <details class="collapse">
+        <summary>
+          <span class="collapse-title">WebPPL primer</span>
+          <span class="collapse-meta">applied to <code>*-primer-*</code> runs</span>
+        </summary>
+        <div class="collapse-body"><pre class="ctx-pre" data-primer-placeholder>(primer loads here)</pre></div>
+      </details>
+    </div>
+  </section>
+
+  <section class="detail-section">
+    <div class="section-title">
+      <span class="section-title-num">01</span>
+      <span>code</span>
+      <span class="section-title-meta">comparing <code data-ab-label-a>{A.short}</code> vs <code data-ab-label-b>{B.short}</code></span>
+    </div>
+    <div class="compare" data-compare>
+      <div class="compare-grid" data-compare-grid set:html={compareGridHtml}></div>
+      <div class="compare-chart-slot" data-chart-slot set:html={chartSectionHtml}></div>
+    </div>
+  </section>
+
+  <section class="detail-section">
+    <div class="section-title">
+      <span class="section-title-num">03</span>
+      <span>other runs</span>
+      <span class="section-title-meta">{runs.length} total</span>
+    </div>
+    <table class="other-runs">
+      <thead>
+        <tr>
+          <th>run</th>
+          <th>flags</th>
+          <th>bucket</th>
+          <th>TV</th>
+          <th>KL</th>
+          <th>actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {runs.map((r) => {
+          const rec = perAtomRuns[r.id];
+          const b = bucketFor(rec);
+          const tv = maxTV(rec);
+          const kl = maxKL(rec);
           return (
-            <span class={`run-tab tone-${rt}`} data-tip={`${runName}\nbucket: ${rb} — ${descFor(rb)}\nclick to set right pane`} data-run={runName}>
-              <span class="rt-glyph">{rg}</span>
-              {runName}
-            </span>
+            <tr>
+              <td>
+                <span class="other-runs-name">{r.label}</span>
+                {r.primary && <span class="other-runs-primary">primary</span>}
+              </td>
+              <td>
+                <span class="flag">{r.model}</span>
+                {r.primer
+                  ? <span class="flag flag-primer">+primer</span>
+                  : <span class="flag flag-noprimer">no-primer</span>}
+                {r.thinking && <span class="flag flag-think">thinking</span>}
+              </td>
+              <td><Fragment set:html={renderBucketBadge(b, null, 'xs', false)} /></td>
+              <td class="num">{fmtTV(tv)}</td>
+              <td class="num">{fmtKL(kl)}</td>
+              <td>
+                <button type="button" class="link-btn" data-action-as-a={r.id} disabled={!rec}>as A</button>
+                <span class="link-sep">·</span>
+                <button type="button" class="link-btn" data-action-as-b={r.id} disabled={!rec}>as B</button>
+              </td>
+            </tr>
           );
         })}
+      </tbody>
+    </table>
+  </section>
+
+  <div class="feedback" data-feedback data-collection={collectionSlug} data-dataset-version={collectionSlug}>
+    <div class="feedback-hd">
+      <span class="section-title-num">★</span>
+      <span>feedback on this atom</span>
+      <span class="feedback-rater" data-fb-rater-host hidden>
+        as <strong data-fb-rater-name></strong>
+        <button type="button" class="link-btn" data-fb-change-name>change</button>
+      </span>
+    </div>
+    <div class="feedback-body">
+      <div class="feedback-votes">
+        <button type="button" class="vote vote-up" data-vote="up">
+          <span aria-hidden="true">▲</span> looks right
+        </button>
+        <button type="button" class="vote vote-down" data-vote="down">
+          <span aria-hidden="true">▼</span> issue
+        </button>
       </div>
-    )}
+      <textarea class="feedback-text" data-fb-text rows="2"
+        placeholder="optional comment — what's right or wrong about this atom or the run's behavior on it?"></textarea>
+      <button type="button" class="btn-primary" data-fb-submit disabled>submit</button>
+    </div>
+    <div class="feedback-ack" data-fb-ack hidden></div>
+    <div class="feedback-prev" data-fb-prev hidden></div>
   </div>
 
-  <div class="atom-body">
-    <section class="section">
-      <div class="section-title">Prompt</div>
-      <details class="sys-block">
-        <summary>
-          <span class="sys-tag">system</span> base instructions
-          <span class="sys-meta">used by every run</span>
-        </summary>
-        <pre>{SYSTEM_PROMPT_BASE}</pre>
-      </details>
-      <details class="sys-block">
-        <summary>
-          <span class="sys-tag">system</span> WebPPL primer
-          <span class="sys-meta">appended on <span class="mono">*-primer-*</span> runs only</span>
-        </summary>
-        <pre>{WEBPPL_PRIMER}</pre>
-      </details>
-      <div class="user-msg-label">User message</div>
-      <Fragment set:html={promptHtml} />
-    </section>
-
-    <section class="section">
-      <div class="section-title">Code comparison</div>
-      <div class="compare">
-        <div class="codepane" data-pane="left">
-          <div class="codepane-head">
-            <select class="codepane-select" data-pane="left">
-              {leftOptions.map((o) => (
-                <option value={o.value} selected={o.selected}>{o.label}</option>
-              ))}
-            </select>
-            <span class={`codepane-status tone-${statusFor(initialLeft).tone}`} set:html={renderStatus(statusFor(initialLeft))} />
-          </div>
-          {sources.map((s) => (
-            <Fragment>
-              {s.err && (
-                <pre class="codepane-err" data-src={s.key} hidden={s.key !== initialLeft}>{String(s.err).slice(0, 600)}</pre>
-              )}
-              <pre class="codepane-body" data-src={s.key} hidden={s.key !== initialLeft}>{s.code}</pre>
-            </Fragment>
-          ))}
-        </div>
-        <div class="codepane" data-pane="right">
-          <div class="codepane-head">
-            <select class="codepane-select" data-pane="right">
-              {rightOptions.map((o) => (
-                <option value={o.value} selected={o.selected}>{o.label}</option>
-              ))}
-            </select>
-            <span class={`codepane-status tone-${statusFor(initialRight).tone}`} set:html={renderStatus(statusFor(initialRight))} />
-          </div>
-          {sources.map((s) => (
-            <Fragment>
-              {s.err && (
-                <pre class="codepane-err" data-src={s.key} hidden={s.key !== initialRight}>{String(s.err).slice(0, 600)}</pre>
-              )}
-              <pre class="codepane-body" data-src={s.key} hidden={s.key !== initialRight}>{s.code}</pre>
-            </Fragment>
-          ))}
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-title">Groundtruth output</div>
-      <div class="output-box">
-        {gtViz ? (
-          <Fragment>
-            <Fragment set:html={gtViz} />
-            <details class="gt-raw">
-              <summary>raw JSON</summary>
-              <pre>{gtOutStr}</pre>
-            </details>
-          </Fragment>
-        ) : (
-          <pre class="gt-raw"><Fragment>{gtOutStr}</Fragment></pre>
-        )}
-      </div>
-    </section>
-
-    <FeedbackWidget atomId={atom.id} collectionSlug={collectionSlug} datasetVersion={datasetVersion} />
-  </div>
+  <script type="application/json" data-source-payload={atom.id} set:html={JSON.stringify(sourcePayload).replace(/</g, '\\u003c')} />
 </section>

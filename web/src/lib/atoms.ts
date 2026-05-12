@@ -1,10 +1,8 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { Atom, Collection, ScoredRun } from './types';
+import type { Atom, Collection, RunMeta, ScoredRun } from './types';
 
-// Astro's build/prerender step runs with CWD = the Astro project root (web/).
-// import.meta.url-based resolution would point into the bundled output dir
-// during prerender and miss the data files entirely.
+// Astro's build/prerender runs with CWD = the Astro project root (web/).
 const REPO_ROOT = resolve(process.cwd(), '..');
 const DATA_DIR = join(REPO_ROOT, 'data');
 const RUNS_DIR = join(DATA_DIR, 'eval_runs');
@@ -21,6 +19,7 @@ export const COLLECTIONS: Collection[] = [
     slug: 'curated-v3-dippl',
     label: 'dippl (v3)',
     jsonlPath: 'data/curated_v3/dippl.jsonl',
+    primaryRun: 'sonnet-46-primer-v3',
     description: 'Curated v3 — dippl pilot (M-to-N chunking).',
   },
 ];
@@ -37,7 +36,12 @@ async function readJsonl<T>(absPath: string): Promise<T[]> {
   for (const line of text.split('\n')) {
     const t = line.trim();
     if (!t) continue;
-    out.push(JSON.parse(t) as T);
+    try {
+      const rec = JSON.parse(t) as T;
+      out.push(rec);
+    } catch {
+      // skip summary trailer or malformed line
+    }
   }
   return out;
 }
@@ -54,7 +58,8 @@ async function loadAllRuns(): Promise<Record<string, Record<string, ScoredRun>>>
   const loaded = await Promise.all(
     dirs.map(async (e) => {
       const recs = await readJsonl<ScoredRun>(join(RUNS_DIR, e.name, 'scored.jsonl'));
-      return [e.name, recs] as const;
+      // Drop the summary trailer (has no `id`).
+      return [e.name, recs.filter((r) => r && (r as any).id)] as const;
     }),
   );
   const out: Record<string, Record<string, ScoredRun>> = {};
@@ -67,20 +72,51 @@ async function loadAllRuns(): Promise<Record<string, Record<string, ScoredRun>>>
   return out;
 }
 
-export interface CollectionData {
-  collection: Collection;
-  atoms: Atom[];
-  runs: Record<string, Record<string, ScoredRun>>;
-}
-
-let _cache: Map<string, CollectionData> | null = null;
 let _allRunsCache: Record<string, Record<string, ScoredRun>> | null = null;
-
 export async function loadAllRunsCached() {
   if (_allRunsCache) return _allRunsCache;
   _allRunsCache = await loadAllRuns();
   return _allRunsCache;
 }
+
+/** Parse `haiku-45-think-noprimer-v3` → metadata. */
+export function parseRunMeta(id: string, primaryRunId: string | null): RunMeta {
+  const lower = id.toLowerCase();
+  const primer = !lower.includes('noprimer');
+  const thinking = lower.includes('think');
+  // model: take leading two segments split by `-`
+  // e.g. haiku-45-* → haiku-4-5, sonnet-46-* → sonnet-4-6
+  let model = id;
+  const m = id.match(/^([a-z]+)-(\d)(\d)/);
+  if (m) model = `${m[1]}-${m[2]}.${m[3]}`;
+
+  const tagBits = [
+    model,
+    primer ? '+p' : '−p',
+    thinking ? '+t' : '',
+  ].filter(Boolean);
+  const short = tagBits.join(' ').replace(/^([a-z]+)-(\d+\.\d+)/, (_, n, v) => `${n.slice(0, 1)}${v.replace('.', '')}`);
+  // e.g. `haiku-4.5` -> `h45`; combined short: `h45 +p`
+  return {
+    id,
+    label: id,
+    short: short || id,
+    model,
+    primer,
+    thinking,
+    primary: id === primaryRunId,
+  };
+}
+
+export interface CollectionData {
+  collection: Collection;
+  atoms: Atom[];
+  runs: Record<string, Record<string, ScoredRun>>;
+  runMeta: RunMeta[];
+  primary: RunMeta | null;
+}
+
+let _cache: Map<string, CollectionData> | null = null;
 
 export async function loadCollection(slug: string): Promise<CollectionData | null> {
   const collection = COLLECTIONS.find((c) => c.slug === slug);
@@ -99,7 +135,12 @@ export async function loadCollection(slug: string): Promise<CollectionData | nul
     }
     if (Object.keys(matched).length > 0) runs[runName] = matched;
   }
-  const data: CollectionData = { collection, atoms, runs };
+  const primaryRunId = collection.primaryRun && runs[collection.primaryRun]
+    ? collection.primaryRun
+    : (Object.keys(runs)[0] ?? null);
+  const runMeta = Object.keys(runs).sort().map((id) => parseRunMeta(id, primaryRunId));
+  const primary = runMeta.find((r) => r.primary) ?? null;
+  const data: CollectionData = { collection, atoms, runs, runMeta, primary };
   _cache.set(slug, data);
   return data;
 }
@@ -113,12 +154,6 @@ export async function loadAllCollections(): Promise<CollectionData[]> {
   return out;
 }
 
-export function primaryRunFor(d: CollectionData): string | null {
-  const pref = d.collection.primaryRun;
-  if (pref && d.runs[pref]) return pref;
-  return Object.keys(d.runs)[0] ?? null;
-}
-
 export function groupKey(atom: Atom): string {
   const src = atom.source ?? '';
   if (src) {
@@ -129,6 +164,14 @@ export function groupKey(atom: Atom): string {
   return aid.includes('/') ? aid.split('/')[0] : aid;
 }
 
-export function atomDomId(atomId: string): string {
-  return 'atom-' + atomId.replace(/\//g, '--').replace(/ /g, '_');
+/** Extract atom's leaf name after the last slash (e.g. ex1.b). */
+export function atomLeaf(atomId: string): string {
+  const i = atomId.lastIndexOf('/');
+  return i === -1 ? atomId : atomId.slice(i + 1);
+}
+
+/** Extract atom's slash-prefix (everything before the leaf). */
+export function atomPrefix(atomId: string): string {
+  const i = atomId.lastIndexOf('/');
+  return i === -1 ? '' : atomId.slice(0, i);
 }

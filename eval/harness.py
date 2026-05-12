@@ -146,7 +146,7 @@ def evaluate_atom(
         "id": atom["id"],
         "answer_shape": atom["answer_shape"],
         "gt": gt_meta,
-        "gen": {k: v for k, v in gen.items() if k != "answer"},
+        "gen": {k: v for k, v in gen.items()},
         "string": {
             "exact": code_exact_match(generated_code, atom["groundtruth_code"]),
             "jaccard": code_jaccard(generated_code, atom["groundtruth_code"]),

@@ -15,3 +15,6 @@ data/sources/
 
 # tmp
 *.tmp
+
+# scoring backups (rotated when scoring is re-run)
+data/eval_runs/*/*.pre-output-bak

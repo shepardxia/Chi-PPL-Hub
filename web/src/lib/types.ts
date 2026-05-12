@@ -1,12 +1,13 @@
-// Atom + run record types — mirrors what scripts/render_atoms_html.py renders.
-// Loaded from JSONL files in ../data at build time.
+export type Bucket =
+  | 'TV=0' | 'TV<.05' | 'TV<.5' | 'TV<1' | 'TV=1'
+  | 'val+' | 'val-' | 'shape!' | 'fail' | 'no-run';
 
 export type AnswerShape =
   | 'value'
   | 'samples'
   | 'distribution'
   | { record: Record<string, AnswerShape> }
-  | string; // fallback for unknown shapes
+  | string;
 
 export interface Atom {
   id: string;
@@ -26,25 +27,34 @@ export interface ScoredRun {
   id: string;
   generation?: { code?: string };
   evaluation?: {
-    gen?: { executed?: boolean; error?: string };
+    gen?: { executed?: boolean; error?: string; answer?: unknown };
     comparison?: { ok?: boolean; error?: string };
     metrics?: Record<string, number>;
   };
 }
 
 export interface Collection {
-  /** URL slug, e.g. "atomized-v2" */
   slug: string;
-  /** Human label, e.g. "exercises" */
   label: string;
-  /** Path relative to repo root */
   jsonlPath: string;
-  /** Default run name to drive bucket badges + active code panel */
   primaryRun?: string;
-  /** Free-form description shown on the collection landing page */
   description?: string;
 }
 
-export type Bucket =
-  | 'TV=0' | 'TV<.05' | 'TV<.5' | 'TV<1' | 'TV=1'
-  | 'val+' | 'val-' | 'shape!' | 'fail' | 'no-run';
+export interface RunMeta {
+  id: string;
+  label: string;
+  short: string;
+  model: string;
+  primer: boolean;
+  thinking: boolean;
+  primary: boolean;
+}
+
+/** Serialized output shape used by the chart + value/record renderers. */
+export type RenderOutput =
+  | { kind: 'value';        value: unknown }
+  | { kind: 'distribution'; support: string[]; probs: number[] }
+  | { kind: 'samples';      support: string[]; counts: number[] }
+  | { kind: 'record';       fields: Record<string, RenderOutput> }
+  | null;

@@ -1,4 +1,4 @@
-import type { AnswerShape } from './types';
+import type { AnswerShape, RenderOutput } from './types';
 
 export function escapeHtml(s: string): string {
   return s
@@ -9,78 +9,423 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Render a prompt with ```fenced``` blocks → <pre>, and `inline` → <code>. */
-export function renderPrompt(prompt: string): string {
-  const out: string[] = [];
-  let inFence = false;
+// ─── Markdown ───────────────────────────────────────────────────────────────
+// Tiny markdown handler: ``` fenced blocks, `inline code`, **bold**, paragraphs.
+
+interface MdBlock { type: 'p' | 'code'; content: string; lang?: string; }
+
+function parseMarkdown(src: string): MdBlock[] {
+  const parts: MdBlock[] = [];
+  const lines = src.split('\n');
   let buf: string[] = [];
-  for (const line of prompt.split('\n')) {
-    if (line.startsWith('```')) {
-      if (inFence) {
-        out.push('<pre>' + escapeHtml(buf.join('\n')) + '</pre>');
-        buf = [];
-        inFence = false;
+  let inFence = false;
+  let fenceLang = '';
+  let fenceBuf: string[] = [];
+  const flushPara = () => {
+    if (!buf.length) return;
+    parts.push({ type: 'p', content: buf.join('\n') });
+    buf = [];
+  };
+  for (const line of lines) {
+    if (inFence) {
+      if (line.startsWith('```')) {
+        parts.push({ type: 'code', lang: fenceLang, content: fenceBuf.join('\n') });
+        inFence = false; fenceBuf = [];
       } else {
-        inFence = true;
+        fenceBuf.push(line);
       }
       continue;
     }
-    if (inFence) {
-      buf.push(line);
-    } else {
-      out.push(inlineCode(escapeHtml(line)));
+    if (line.startsWith('```')) {
+      flushPara();
+      inFence = true;
+      fenceLang = line.slice(3).trim();
+      continue;
     }
+    if (line.trim() === '') { flushPara(); continue; }
+    buf.push(line);
   }
-  if (inFence && buf.length) out.push('<pre>' + escapeHtml(buf.join('\n')) + '</pre>');
-  return '<div class="prompt-md">' + out.join('\n') + '</div>';
+  flushPara();
+  return parts;
 }
 
-function inlineCode(text: string): string {
-  const parts = text.split('`');
-  if (parts.length < 3) return text;
-  return parts
-    .map((p, i) => (i % 2 === 0 ? p : '<code>' + p + '</code>'))
-    .join('');
+function inlineMd(text: string): string {
+  const escaped = escapeHtml(text);
+  const out: string[] = [];
+  let i = 0;
+  while (i < escaped.length) {
+    if (escaped[i] === '`') {
+      const j = escaped.indexOf('`', i + 1);
+      if (j > 0) {
+        out.push(`<code class="md-inline-code">${escaped.slice(i + 1, j)}</code>`);
+        i = j + 1;
+        continue;
+      }
+    }
+    if (escaped[i] === '*' && escaped[i + 1] === '*') {
+      const j = escaped.indexOf('**', i + 2);
+      if (j > 0) {
+        out.push(`<strong>${escaped.slice(i + 2, j)}</strong>`);
+        i = j + 2;
+        continue;
+      }
+    }
+    const next = escaped.indexOf('`', i);
+    const nextB = escaped.indexOf('**', i);
+    let end = escaped.length;
+    if (next > -1) end = Math.min(end, next);
+    if (nextB > -1) end = Math.min(end, nextB);
+    out.push(escaped.slice(i, end));
+    i = end;
+  }
+  return out.join('');
+}
+
+export function renderMarkdown(src: string): string {
+  const blocks = parseMarkdown(src);
+  return '<div class="md">' + blocks.map((b) =>
+    b.type === 'code'
+      ? renderCode(b.content, b.lang || 'webppl')
+      : `<p>${inlineMd(b.content)}</p>`
+  ).join('') + '</div>';
+}
+
+// ─── WebPPL syntax highlighter ──────────────────────────────────────────────
+
+const WEBPPL_KW = new Set([
+  'var','function','return','if','else','for','while','true','false','null','undefined','new',
+]);
+const WEBPPL_INFER = new Set([
+  'Infer','Enumerate','MCMC','SMC','rejection','sample','factor','observe','condition',
+  'expectation','flip','uniform','uniformDraw','gaussian','beta','dirichlet','categorical',
+  'discrete','mem','mapData','map','map2','reduce','Categorical','Bernoulli','Binomial',
+  'Gaussian','Beta','Dirichlet','Vector','Math','repeat',
+]);
+
+interface Tok { t: string; v: string; }
+
+function tokenize(src: string): Tok[] {
+  const tokens: Tok[] = [];
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '/') {
+      const j = src.indexOf('\n', i);
+      const end = j === -1 ? src.length : j;
+      tokens.push({ t: 'cm', v: src.slice(i, end) });
+      i = end;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      const j = src.indexOf('*/', i + 2);
+      const end = j === -1 ? src.length : j + 2;
+      tokens.push({ t: 'cm', v: src.slice(i, end) });
+      i = end;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      const q = c;
+      let j = i + 1;
+      while (j < src.length && src[j] !== q) {
+        if (src[j] === '\\') j += 2;
+        else j++;
+      }
+      tokens.push({ t: 's', v: src.slice(i, j + 1) });
+      i = j + 1;
+      continue;
+    }
+    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1] ?? ''))) {
+      let j = i;
+      while (j < src.length && /[0-9.eE+-]/.test(src[j])) j++;
+      tokens.push({ t: 'n', v: src.slice(i, j) });
+      i = j;
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(c)) {
+      let j = i;
+      while (j < src.length && /[A-Za-z0-9_$]/.test(src[j])) j++;
+      const v = src.slice(i, j);
+      let t = 'i';
+      if (WEBPPL_KW.has(v)) t = 'k';
+      else if (WEBPPL_INFER.has(v)) t = 'b';
+      else if (src[j] === '(') t = 'f';
+      tokens.push({ t, v });
+      i = j;
+      continue;
+    }
+    if (/[{}()\[\],;:]/.test(c)) {
+      tokens.push({ t: 'p', v: c });
+      i++;
+      continue;
+    }
+    if (/[+\-*/<>=!&|?]/.test(c)) {
+      let j = i;
+      while (j < src.length && /[+\-*/<>=!&|?]/.test(src[j])) j++;
+      tokens.push({ t: 'o', v: src.slice(i, j) });
+      i = j;
+      continue;
+    }
+    tokens.push({ t: 'w', v: c });
+    i++;
+  }
+  return tokens;
+}
+
+function highlightLines(src: string): Tok[][] {
+  const tokens = tokenize(src);
+  const lines: Tok[][] = [[]];
+  for (const tok of tokens) {
+    const segs = tok.v.split('\n');
+    segs.forEach((seg, i) => {
+      if (i > 0) lines.push([]);
+      if (seg) lines[lines.length - 1].push({ t: tok.t, v: seg });
+    });
+  }
+  return lines;
+}
+
+export function renderCode(code: string, lang = 'webppl'): string {
+  const lines = highlightLines(code || '');
+  const body = lines.map((toks, i) => {
+    const content = toks.length === 0
+      ? '​'
+      : toks.map((tk) => `<span class="tok-${tk.t}">${escapeHtml(tk.v)}</span>`).join('');
+    return `<div class="code-line"><span class="code-ln">${i + 1}</span><span class="code-content">${content}</span></div>`;
+  }).join('');
+  return (
+    `<div class="code">` +
+    `<div class="code-lang">${escapeHtml(lang)}</div>` +
+    `<pre class="code-body">${body}</pre>` +
+    `</div>`
+  );
+}
+
+// ─── Output normalization ───────────────────────────────────────────────────
+// Take the executor's raw answer (the JSON stored as `groundtruth_output` or
+// `evaluation.gen.answer`) and convert it to RenderOutput.
+
+export function normalizeOutput(answer: unknown, shape: AnswerShape): RenderOutput {
+  if (answer == null) return null;
+  if (shape === 'distribution') {
+    if (typeof answer === 'object' && answer !== null) {
+      const a = answer as Record<string, unknown>;
+      if (a.__kind === 'distribution' && Array.isArray(a.support) && Array.isArray(a.probs)) {
+        return {
+          kind: 'distribution',
+          support: (a.support as unknown[]).map(stringifyKey),
+          probs: a.probs as number[],
+        };
+      }
+    }
+    return { kind: 'value', value: answer };
+  }
+  if (shape === 'samples') {
+    if (Array.isArray(answer)) {
+      // Aggregate samples → {support, counts}
+      const counts = new Map<string, number>();
+      for (const item of answer) {
+        const key = stringifyKey(item);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      const support = Array.from(counts.keys());
+      const cs = support.map((s) => counts.get(s)!);
+      return { kind: 'samples', support, counts: cs };
+    }
+    return { kind: 'value', value: answer };
+  }
+  if (shape === 'value') {
+    return { kind: 'value', value: answer };
+  }
+  if (typeof shape === 'object' && shape !== null && 'record' in shape) {
+    if (typeof answer === 'object' && answer !== null && !Array.isArray(answer)) {
+      const fields: Record<string, RenderOutput> = {};
+      const subShape = (shape as { record: Record<string, AnswerShape> }).record;
+      for (const [k, sub] of Object.entries(subShape)) {
+        const inner = normalizeOutput((answer as Record<string, unknown>)[k], sub);
+        if (inner) fields[k] = inner;
+      }
+      return { kind: 'record', fields };
+    }
+    return { kind: 'value', value: answer };
+  }
+  return { kind: 'value', value: answer };
+}
+
+function stringifyKey(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(4);
+  return JSON.stringify(v);
+}
+
+// ─── Mirrored bar chart (SVG) ───────────────────────────────────────────────
+// Renders two distributions overlaid: A goes up from mid-axis, B goes down.
+
+interface ChartSeries { kind: 'distribution' | 'samples'; support: string[]; probs?: number[]; counts?: number[]; }
+
+function seriesProbs(s: ChartSeries | null | undefined, support: string[]): number[] {
+  if (!s) return support.map(() => 0);
+  return support.map((label) => {
+    const idx = s.support.indexOf(label);
+    if (idx === -1) return 0;
+    if (s.kind === 'samples') {
+      const total = (s.counts ?? []).reduce((a, b) => a + b, 0) || 1;
+      return ((s.counts ?? [])[idx] ?? 0) / total;
+    }
+    return (s.probs ?? [])[idx] ?? 0;
+  });
+}
+
+export function renderChart(opts: {
+  a: ChartSeries | null;
+  b: ChartSeries | null;
+  labelA: string;
+  labelB: string;
+}): string {
+  const { a, b, labelA, labelB } = opts;
+  const supportSet = new Set<string>();
+  for (const s of a?.support ?? []) supportSet.add(s);
+  for (const s of b?.support ?? []) supportSet.add(s);
+  const support = Array.from(supportSet);
+  if (support.length === 0) {
+    return '<div class="out-empty">(no distribution)</div>';
+  }
+  const aProbs = seriesProbs(a, support);
+  const bProbs = seriesProbs(b, support);
+  const maxP = Math.max(0.01, ...aProbs, ...bProbs);
+
+  const w = 640, h = 240;
+  const padL = 36, padR = 16, padT = 18, padB = 28;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+  const midY = padT + innerH / 2;
+  const halfH = innerH / 2 - 4;
+  const colW = innerW / Math.max(1, support.length);
+  const barW = Math.max(8, Math.min(40, colW * 0.7));
+  const ticks = [0, maxP / 2, maxP];
+
+  const gridLines: string[] = [];
+  for (let i = 0; i < ticks.length; i++) {
+    const t = ticks[i];
+    const yA = midY - (t / maxP) * halfH;
+    const yB = midY + (t / maxP) * halfH;
+    gridLines.push(
+      `<line x1="${padL}" y1="${yA}" x2="${w - padR}" y2="${yA}" class="chart-grid"/>` +
+      `<text x="${padL - 6}" y="${yA}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${t.toFixed(2)}</text>`
+    );
+    if (i > 0) {
+      gridLines.push(
+        `<line x1="${padL}" y1="${yB}" x2="${w - padR}" y2="${yB}" class="chart-grid"/>` +
+        `<text x="${padL - 6}" y="${yB}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${t.toFixed(2)}</text>`
+      );
+    }
+  }
+  const midAxis = `<line x1="${padL}" y1="${midY}" x2="${w - padR}" y2="${midY}" class="chart-axis"/>`;
+
+  const bars = support.map((s, i) => {
+    const x = padL + i * colW + (colW - barW) / 2;
+    const ha = (aProbs[i] / maxP) * halfH;
+    const hb = (bProbs[i] / maxP) * halfH;
+    const aLabel = aProbs[i] > 0.005 ? aProbs[i].toFixed(2) : '';
+    const bLabel = bProbs[i] > 0.005 ? bProbs[i].toFixed(2) : '';
+    const sEsc = escapeHtml(s);
+    return (
+      `<g>` +
+      `<rect x="${x.toFixed(2)}" y="${(midY - ha).toFixed(2)}" width="${barW.toFixed(2)}" height="${ha.toFixed(2)}" class="chart-bar chart-bar-a"/>` +
+      `<rect x="${x.toFixed(2)}" y="${midY.toFixed(2)}" width="${barW.toFixed(2)}" height="${hb.toFixed(2)}" class="chart-bar chart-bar-b"/>` +
+      `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY - ha - 4).toFixed(2)}" class="chart-val chart-val-a" text-anchor="middle">${aLabel}</text>` +
+      `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY + hb + 12).toFixed(2)}" class="chart-val chart-val-b" text-anchor="middle">${bLabel}</text>` +
+      `<text x="${(x + barW / 2).toFixed(2)}" y="${(h - 8).toFixed(2)}" class="chart-xt" text-anchor="middle">${sEsc}</text>` +
+      `</g>`
+    );
+  }).join('');
+
+  return (
+    `<div class="chart">` +
+    `<div class="chart-legend">` +
+    `<span class="chart-legend-item chart-legend-a"><span class="chart-legend-swatch"></span> ${escapeHtml(labelA)}</span>` +
+    `<span class="chart-legend-item chart-legend-b"><span class="chart-legend-swatch"></span> ${escapeHtml(labelB)}</span>` +
+    `</div>` +
+    `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img" aria-label="distribution overlay">` +
+    gridLines.join('') + midAxis + bars +
+    `</svg>` +
+    `</div>`
+  );
+}
+
+// ─── Value / record renderers ───────────────────────────────────────────────
+
+export function renderValueOutput(output: RenderOutput, fallback = '(no output)'): string {
+  if (!output) return `<div class="out-empty">${escapeHtml(fallback)}</div>`;
+  if (output.kind === 'value') {
+    const v = output.value;
+    let txt: string;
+    if (Array.isArray(v)) {
+      txt = '[' + v.map((x) =>
+        typeof x === 'number' ? x.toFixed(4) : JSON.stringify(x),
+      ).join(', ') + ']';
+    } else if (typeof v === 'number') {
+      txt = v.toFixed(4);
+    } else {
+      txt = JSON.stringify(v, null, 2);
+    }
+    return `<div class="out-value"><pre class="out-value-pre">${escapeHtml(txt)}</pre></div>`;
+  }
+  if (output.kind === 'record') {
+    const rows = Object.entries(output.fields).map(([k, v]) => {
+      let val: string;
+      if (v && v.kind === 'value') {
+        val = typeof v.value === 'number' ? v.value.toFixed(4) : JSON.stringify(v.value);
+      } else if (v && v.kind === 'distribution') {
+        val = `dist(${v.support.length})`;
+      } else {
+        val = '...';
+      }
+      return (
+        `<div class="out-record-row">` +
+        `<span class="out-record-key">${escapeHtml(k)}</span>` +
+        `<span class="out-record-eq">=</span>` +
+        `<span class="out-record-val">${escapeHtml(val)}</span>` +
+        `</div>`
+      );
+    }).join('');
+    return `<div class="out-record">${rows}</div>`;
+  }
+  return `<div class="out-empty">${escapeHtml(fallback)}</div>`;
 }
 
 export function shapeLabel(shape: AnswerShape): string {
   if (shape && typeof shape === 'object' && 'record' in shape) {
-    return `record(${Object.keys(shape.record).join(', ')})`;
+    return `record(${Object.keys((shape as { record: Record<string, AnswerShape> }).record).join(', ')})`;
   }
   return String(shape);
 }
 
-export function truncate(s: string, limit = 4000): string {
-  return s.length <= limit ? s : s.slice(0, limit) + `\n\n... (${s.length - limit} more chars truncated)`;
+export function atomDomId(atomId: string): string {
+  return 'atom-' + atomId.replace(/\//g, '--').replace(/ /g, '_');
 }
 
-export function renderDistViz(d: unknown, maxRows = 12): string | null {
-  if (!d || typeof d !== 'object') return null;
-  const dd = d as Record<string, unknown>;
-  if (dd.__kind !== 'distribution') return null;
-  const support = (dd.support ?? []) as unknown[];
-  const probs = (dd.probs ?? []) as number[];
-  if (support.length === 0 || support.length !== probs.length) return null;
-  const pairs = support
-    .map((v, i) => ({ v, p: probs[i] }))
-    .sort((a, b) => b.p - a.p);
-  const truncated = pairs.length > maxRows;
-  const head = pairs.slice(0, maxRows);
-  const safePmax = (head.length ? Math.max(...head.map((p) => p.p)) : 1.0) || 1.0;
-  const rows = head.map(({ v, p }) => {
-    let label = typeof v === 'string' ? v : JSON.stringify(v);
-    if (label.length > 40) label = label.slice(0, 37) + '…';
-    const barPct = p > 0 ? Math.max(1.0, (100.0 * p) / safePmax) : 0;
-    return (
-      `<div class="dist-row">` +
-      `<span class="lab" title="${escapeHtml(String(v))}">${escapeHtml(label)}</span>` +
-      `<div class="bar-track"><div class="bar-fill" style="width:${barPct.toFixed(1)}%"></div></div>` +
-      `<span class="pv">${p.toFixed(4)}</span>` +
-      `</div>`
-    );
-  });
-  const suffix = truncated
-    ? `<div class="dist-row more"><span class="lab">… ${pairs.length - maxRows} more</span></div>`
-    : '';
-  return '<div class="dist">' + rows.join('') + suffix + '</div>';
+export function isDistLike(o: RenderOutput): o is { kind: 'distribution'; support: string[]; probs: number[] } | { kind: 'samples'; support: string[]; counts: number[] } {
+  return !!o && (o.kind === 'distribution' || o.kind === 'samples');
+}
+
+/** Cap a distribution / samples output to its top-N most probable values.
+ *  LM-generated distributions sometimes carry tens of thousands of support items
+ *  (e.g. when the model produced a degenerate distribution); we never need to
+ *  ship more than a few dozen to render the chart. */
+export function truncateOutput(o: RenderOutput, n = 48): RenderOutput {
+  if (!o) return o;
+  if (o.kind === 'distribution') {
+    if (o.support.length <= n) return o;
+    const idx = o.support.map((_, i) => i).sort((a, b) => o.probs[b] - o.probs[a]).slice(0, n);
+    return { kind: 'distribution', support: idx.map((i) => o.support[i]), probs: idx.map((i) => o.probs[i]) };
+  }
+  if (o.kind === 'samples') {
+    if (o.support.length <= n) return o;
+    const idx = o.support.map((_, i) => i).sort((a, b) => o.counts[b] - o.counts[a]).slice(0, n);
+    return { kind: 'samples', support: idx.map((i) => o.support[i]), counts: idx.map((i) => o.counts[i]) };
+  }
+  if (o.kind === 'record') {
+    return { kind: 'record', fields: Object.fromEntries(Object.entries(o.fields).map(([k, v]) => [k, truncateOutput(v, n)])) };
+  }
+  return o;
 }
