@@ -81,6 +81,13 @@ WebPPL packages in `eval/deps/` are loaded via `--require` for every run:
 ## Atom curation
 
 - **`scripts/assemble_curated.py`** is the current pipeline. Agents emit a JSONL of `{id, source, source_block_indices, prompt, wrap_target, notes}`; the script concats listed code blocks from source markdown, appends `var ANSWER = (<wrap_target>);`, executes via `execute_webppl(seed=42)`, and emits a fully-formed atom on success or a broken record on failure. Agents own *judgment* (chunking, prompt wording, helper inlining); the pipeline owns mechanics.
+
+  ```bash
+  PYTHONPATH=. .venv/bin/python -m scripts.assemble_curated \
+    --emissions data/curated_v3/_<corpus>_emissions.jsonl \
+    --output    data/curated_v3/<corpus>.jsonl \
+    --broken    data/curated_v3/_<corpus>_broken.jsonl
+  ```
 - **`scripts/extract_atoms.py`** is the legacy 1-block-to-1-atom extractor. Its `wrap_with_answer`, `split_blocks`, `classify_answer` are still imported by `assemble_curated.py`; the rest is dead code from earlier rounds.
 - Source corpora live at `data/sources/{dippl,forestdb.org,problang,probmods2,webppl}/` (treated as deps; gitignored).
 
@@ -103,14 +110,15 @@ npm run db:migrate:remote       # apply migrations to remote D1 (production!)
 - Build runs with **CWD = `web/`**. `src/lib/atoms.ts` resolves `process.cwd() + '..'` to find the dataset; do not change to `import.meta.url`-based resolution (vite bundles the file into `dist/_worker.js/chunks/` and the relative path breaks).
 - The site reads `data/atomized_v2.jsonl`, `data/curated_v3/*.jsonl`, and `data/eval_runs/*/scored.jsonl` at build time. Adding a new collection = drop a JSONL into `data/`, append one entry to `COLLECTIONS` in `src/lib/atoms.ts`, push.
 - Bucket naming (`'TV=0'`, `'val+'`, `'shape!'`, etc.) and tone mapping are shared logic with `scripts/render_atoms_html.py`; `web/src/lib/buckets.ts` is the TypeScript port. Keep the labels in sync if you change one.
-- **Prompt text** (system base + WebPPL primer) lives canonically at `data/prompts/{system_base,webppl_primer}.txt`. Both `eval/prompt.py` and `web/src/lib/prompts.ts` read those files at module load. Edit the .txt files only — never inline the text in either reader.
+- **Prompt text** (system base + WebPPL primer) lives canonically at `data/prompts/{system_base,webppl_primer}.txt`. `eval/prompt.py` reads them at import via `Path.read_text()`; `web/src/lib/prompts.ts` uses Vite `?raw` imports so the text is inlined at build time (no Node fs at runtime). Edit the .txt files only — never inline the text in either reader.
 - `dist/.assetsignore` (sourced from `public/.assetsignore`) excludes `_worker.js` and `_routes.json` from the static-asset upload — without it, `wrangler deploy` refuses to upload because it would expose server code.
 - D1 binding: `env.DB` (`ppl-gym-feedback`, id in `wrangler.toml`). Schema in `migrations/0001_init.sql`. R2 binding is commented out pending `wrangler r2 bucket create ppl-gym-backups`; backups will live in a separate `ppl-gym-backup` Worker, not this one.
+- **Local D1 state gotcha**: `wrangler dev --persist-to <path>` and `wrangler d1 migrations apply --local` must use the SAME persist path or they read different SQLite files (silent "no such table" at POST time). Default is `.wrangler/state/v3`; pass `--persist-to` to both or neither.
 - Live URL: `https://pplgym.kingdomofends.org` (custom domain attached to the `ppl-gym` Worker).
 
 ## Cost discipline & process gotchas
 
-- **LLM eval re-gens are expensive.** Don't re-run the full 76-atom batch unless changes target every atom. Use `scripts/rebuild_prompts.py` patterns to identify which atoms actually need fresh generations.
+- **LLM eval re-gens are expensive.** Don't re-run the full 76-atom batch unless changes target every atom. `scripts/rebuild_prompts.py` rebuilds prompts only for atoms whose source emissions changed; re-gen against that subset.
 - **Subagents inherit the parent's model unless pinned.** For routine review/audit, always pass `model="sonnet"` and instructions saying "all N atoms, no sampling." See `data/REVIEW_PROCESS.md`.
 - **Don't silently drop data.** Atoms that fail assembly/exec land in `_*_broken.jsonl` with the agent's notes + executor stderr — they're for triage, not for ignoring.
 - **Don't push directly to `main` without authorization.** Earlier blanket "commit and push" approvals don't carry across to subsequent changes; ask each time.
