@@ -670,7 +670,7 @@ button { font-family: inherit; }
   padding: 12px;
 }
 .chart-legend {
-  display: flex; gap: 14px;
+  display: flex; gap: 14px; align-items: baseline;
   font: 11px var(--font-mono);
   color: var(--fg-mid);
   margin-bottom: 4px;
@@ -681,7 +681,22 @@ button { font-family: inherit; }
 }
 .chart-legend-a .chart-legend-swatch { background: var(--chart-a); }
 .chart-legend-b .chart-legend-swatch { background: var(--chart-b); }
-.chart-trunc { color: var(--fg-faint); font-style: italic; margin-left: 4px; }
+.chart-legend-meta { color: var(--fg-dim); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* Continuous-mode (≥14 numeric bins): filled area + outline curve */
+.chart-area { stroke: none; opacity: .22; }
+.chart-area-a { fill: var(--chart-a); }
+.chart-area-b { fill: var(--chart-b); }
+.chart-line { fill: none; stroke-width: 1.6; stroke-linejoin: miter; }
+.chart-line-a { stroke: var(--chart-a); }
+.chart-line-b { stroke: var(--chart-b); }
+.chart-mode { stroke: var(--bg); stroke-width: 1.5; }
+.chart-mode-a { fill: var(--chart-a); }
+.chart-mode-b { fill: var(--chart-b); }
+.chart-mode-label { font: 10px var(--font-mono); font-variant-numeric: tabular-nums; }
+.chart-mode-label-a { fill: var(--chart-a); }
+.chart-mode-label-b { fill: var(--chart-b); }
+.chart-hover { cursor: crosshair; }
 .chart-svg { width: 100%; height: auto; display: block; }
 .chart-grid { stroke: var(--border); stroke-dasharray: 2 3; stroke-width: 1; }
 .chart-axis { stroke: var(--border-strong); stroke-width: 1; }

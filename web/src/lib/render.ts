@@ -282,7 +282,7 @@ export function renderChart(opts: {
   labelB: string;
   maxBars?: number;
 }): string {
-  const { a, b, labelA, labelB, maxBars = 30 } = opts;
+  const { a, b, labelA, labelB, maxBars = 48 } = opts;
   const supportSet = new Set<string>();
   for (const s of a?.support ?? []) supportSet.add(s);
   for (const s of b?.support ?? []) supportSet.add(s);
@@ -291,11 +291,17 @@ export function renderChart(opts: {
     return '<div class="out-empty">(no distribution)</div>';
   }
 
+  // Detect numeric support: every label parses as a finite number.
+  const numericValues = support.map((s) => Number(s));
+  const numeric = numericValues.every((v) => Number.isFinite(v));
+  const isContinuous = numeric && support.length >= 14;
+
   let aProbs = seriesProbs(a, support);
   let bProbs = seriesProbs(b, support);
   let truncated = 0;
-  // Rank support by max(a, b) probability and keep top N for readability.
-  if (support.length > maxBars) {
+  // For categorical, top-N by max(a, b) prob keeps the chart readable.
+  // For continuous (already binned upstream), don't truncate; render all bins.
+  if (!isContinuous && support.length > maxBars) {
     const ranked = support.map((s, i) => ({ s, p: Math.max(aProbs[i], bProbs[i]) }))
       .sort((x, y) => y.p - x.p)
       .slice(0, maxBars)
@@ -305,11 +311,10 @@ export function renderChart(opts: {
     aProbs = seriesProbs(a, support);
     bProbs = seriesProbs(b, support);
   }
-  // Order: numeric values → sorted by value (x-axis is monotonic);
-  // otherwise → keep current order (already prob-sorted for categorical).
-  const numericValues = support.map((s) => Number(s));
-  if (numericValues.every((v) => Number.isFinite(v))) {
-    const idx = support.map((_, i) => i).sort((x, y) => numericValues[x] - numericValues[y]);
+  // Numeric → sort by value so bars are in x-axis order.
+  if (numeric) {
+    const nums = support.map((s) => Number(s));
+    const idx = support.map((_, i) => i).sort((x, y) => nums[x] - nums[y]);
     support = idx.map((i) => support[i]);
     aProbs = idx.map((i) => aProbs[i]);
     bProbs = idx.map((i) => bProbs[i]);
@@ -317,15 +322,20 @@ export function renderChart(opts: {
   const maxP = Math.max(0.01, ...aProbs, ...bProbs);
 
   const w = 640, h = 240;
-  const padL = 40, padR = 16, padT = 18, padB = 28;
+  const padL = 40, padR = 16, padT = 22, padB = 30;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const midY = padT + innerH / 2;
   const halfH = innerH / 2 - 4;
-  const colW = innerW / Math.max(1, support.length);
-  const barW = Math.max(8, Math.min(40, colW * 0.7));
   const ticks = [0, maxP / 2, maxP];
   const fmtY = (v: number) => v === 0 ? '0' : maxP >= 0.1 ? v.toFixed(2) : maxP >= 0.01 ? v.toFixed(3) : v.toExponential(1);
+  const fmtNum = (n: number) => {
+    if (Number.isInteger(n)) return String(n);
+    const abs = Math.abs(n);
+    if (abs >= 100) return n.toFixed(0);
+    if (abs >= 10) return n.toFixed(1);
+    return n.toFixed(2);
+  };
 
   const gridLines: string[] = [];
   for (let i = 0; i < ticks.length; i++) {
@@ -345,54 +355,198 @@ export function renderChart(opts: {
   }
   const midAxis = `<line x1="${padL}" y1="${midY}" x2="${w - padR}" y2="${midY}" class="chart-axis"/>`;
 
-  // Decide x-label step so we don't overprint when there are many bars.
-  // Min char-width ~6.5px for 10px mono; allow up to 8 chars per label.
-  const maxChars = Math.max(2, Math.min(8, Math.floor(colW / 7)));
-  const xLabelStep = support.length > 24 ? 4 : support.length > 16 ? 2 : 1;
-  const truncLabel = (s: string) => s.length > maxChars ? s.slice(0, Math.max(1, maxChars - 1)) + '…' : s;
+  const body = isContinuous
+    ? renderNumericBars({ support, aProbs, bProbs, maxP, padL, padR, innerW, midY, halfH, h, w, fmtNum })
+    : renderCategoricalBars({ support, aProbs, bProbs, maxP, padL, innerW, midY, halfH, h });
 
-  const fmtBar = (p: number) => {
-    if (p < 0.005) return '';
-    if (maxP >= 0.1) return p.toFixed(2);
-    if (maxP >= 0.01) return p.toFixed(3);
-    return p.toExponential(1);
-  };
-
-  const bars = support.map((s, i) => {
-    const x = padL + i * colW + (colW - barW) / 2;
-    const ha = (aProbs[i] / maxP) * halfH;
-    const hb = (bProbs[i] / maxP) * halfH;
-    const aLabel = fmtBar(aProbs[i]);
-    const bLabel = fmtBar(bProbs[i]);
-    const sEsc = escapeHtml(truncLabel(s));
-    const showLabel = (i % xLabelStep === 0);
-    return (
-      `<g>` +
-      `<rect x="${x.toFixed(2)}" y="${(midY - ha).toFixed(2)}" width="${barW.toFixed(2)}" height="${ha.toFixed(2)}" class="chart-bar chart-bar-a"><title>${escapeHtml(s)}: A=${aProbs[i].toFixed(3)}, B=${bProbs[i].toFixed(3)}</title></rect>` +
-      `<rect x="${x.toFixed(2)}" y="${midY.toFixed(2)}" width="${barW.toFixed(2)}" height="${hb.toFixed(2)}" class="chart-bar chart-bar-b"><title>${escapeHtml(s)}: A=${aProbs[i].toFixed(3)}, B=${bProbs[i].toFixed(3)}</title></rect>` +
-      (aLabel ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY - ha - 4).toFixed(2)}" class="chart-val chart-val-a" text-anchor="middle">${aLabel}</text>` : '') +
-      (bLabel ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY + hb + 12).toFixed(2)}" class="chart-val chart-val-b" text-anchor="middle">${bLabel}</text>` : '') +
-      (showLabel ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(h - 8).toFixed(2)}" class="chart-xt" text-anchor="middle">${sEsc}</text>` : '') +
-      `</g>`
-    );
-  }).join('');
-
-  const truncatedNote = truncated > 0
-    ? ` <span class="chart-trunc">· top ${support.length} of ${support.length + truncated}</span>`
-    : '';
+  const metaBits: string[] = [];
+  metaBits.push(`${support.length} bin${support.length === 1 ? '' : 's'}`);
+  if (numeric && support.length > 1) {
+    const xs = support.map(Number);
+    metaBits.push(`${fmtNum(Math.min(...xs))} … ${fmtNum(Math.max(...xs))}`);
+  }
+  if (truncated > 0) metaBits.push(`top ${support.length} of ${support.length + truncated}`);
+  const metaStr = metaBits.join(' · ');
 
   return (
     `<div class="chart">` +
     `<div class="chart-legend">` +
     `<span class="chart-legend-item chart-legend-a"><span class="chart-legend-swatch"></span> ${escapeHtml(labelA)}</span>` +
     `<span class="chart-legend-item chart-legend-b"><span class="chart-legend-swatch"></span> ${escapeHtml(labelB)}</span>` +
-    truncatedNote +
+    `<span class="chart-legend-meta">${escapeHtml(metaStr)}</span>` +
     `</div>` +
     `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img" aria-label="distribution overlay">` +
-    gridLines.join('') + midAxis + bars +
+    gridLines.join('') + midAxis + body +
     `</svg>` +
     `</div>`
   );
+}
+
+// "Nice" axis step — round 1/2/5 × 10^k.
+function niceTick(step: number): number {
+  if (step <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(step)));
+  const norm = step / pow;
+  const nice = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return nice * pow;
+}
+
+interface NumericBarsArgs {
+  support: string[]; aProbs: number[]; bProbs: number[]; maxP: number;
+  padL: number; padR: number; innerW: number; midY: number; halfH: number;
+  h: number; w: number; fmtNum: (n: number) => string;
+}
+
+function renderNumericBars(args: NumericBarsArgs): string {
+  const { support, aProbs, bProbs, maxP, padL, padR, innerW, midY, halfH, h, w, fmtNum } = args;
+  const xs = support.map(Number);
+  const xMin = Math.min(...xs);
+  const xMax = Math.max(...xs);
+  const range = xMax - xMin || 1;
+  const xPos = (v: number) => padL + ((v - xMin) / range) * innerW;
+  const yA = (p: number) => midY - (p / maxP) * halfH;
+  const yB = (p: number) => midY + (p / maxP) * halfH;
+
+  // Half-pitch on each side: area covers the bin it represents.
+  const pitchHalf = (i: number): number => {
+    if (xs.length === 1) return innerW / 2;
+    if (i === 0) return (xPos(xs[1]) - xPos(xs[0])) / 2;
+    if (i === xs.length - 1) return (xPos(xs[i]) - xPos(xs[i - 1])) / 2;
+    return Math.max(xPos(xs[i]) - xPos(xs[i - 1]), xPos(xs[i + 1]) - xPos(xs[i])) / 2;
+  };
+
+  const buildArea = (probs: number[], yFn: (p: number) => number): string => {
+    let d = '';
+    xs.forEach((x, i) => {
+      const half = pitchHalf(i);
+      const xL = xPos(x) - half;
+      const xR = xPos(x) + half;
+      const y = yFn(probs[i]);
+      if (i === 0) d += `M ${xL.toFixed(2)} ${midY} L ${xL.toFixed(2)} ${y.toFixed(2)} `;
+      d += `L ${xR.toFixed(2)} ${y.toFixed(2)} `;
+      if (i === xs.length - 1) d += `L ${xR.toFixed(2)} ${midY} Z`;
+      else {
+        const nextHalf = pitchHalf(i + 1);
+        const xN = xPos(xs[i + 1]) - nextHalf;
+        const yN = yFn(probs[i + 1]);
+        d += `L ${xN.toFixed(2)} ${y.toFixed(2)} L ${xN.toFixed(2)} ${yN.toFixed(2)} `;
+      }
+    });
+    return d;
+  };
+
+  const buildLine = (probs: number[], yFn: (p: number) => number): string => {
+    let d = '';
+    xs.forEach((x, i) => {
+      const half = pitchHalf(i);
+      const xL = xPos(x) - half;
+      const xR = xPos(x) + half;
+      const y = yFn(probs[i]);
+      if (i === 0) d += `M ${xL.toFixed(2)} ${y.toFixed(2)} `;
+      d += `L ${xR.toFixed(2)} ${y.toFixed(2)} `;
+      if (i < xs.length - 1) {
+        const nextHalf = pitchHalf(i + 1);
+        const xN = xPos(xs[i + 1]) - nextHalf;
+        const yN = yFn(probs[i + 1]);
+        d += `L ${xN.toFixed(2)} ${y.toFixed(2)} L ${xN.toFixed(2)} ${yN.toFixed(2)} `;
+      }
+    });
+    return d;
+  };
+
+  // "Nice" x-ticks within [xMin, xMax].
+  const tickCount = Math.min(7, Math.max(3, Math.floor(innerW / 90)));
+  const step = niceTick(range / (tickCount - 1));
+  const start = Math.ceil(xMin / step) * step;
+  const ticks: number[] = [];
+  for (let v = start; v <= xMax + step / 1000; v += step) ticks.push(Number(v.toFixed(10)));
+
+  // Mode markers
+  const modeIdx = (probs: number[]): number => {
+    let m = 0;
+    for (let i = 1; i < probs.length; i++) if (probs[i] > probs[m]) m = i;
+    return probs[m] > 0 ? m : -1;
+  };
+  const modeA = modeIdx(aProbs);
+  const modeB = modeIdx(bProbs);
+  const renderMode = (i: number, probs: number[], yFn: (p: number) => number, side: 'a' | 'b') => {
+    if (i < 0) return '';
+    const x = xPos(xs[i]);
+    const y = yFn(probs[i]);
+    const dy = side === 'a' ? -8 : 14;
+    const label = `${fmtNum(xs[i])} · ${probs[i].toFixed(3)}`;
+    return (
+      `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.5" class="chart-mode chart-mode-${side}"/>` +
+      `<text x="${x.toFixed(2)}" y="${(y + dy).toFixed(2)}" class="chart-mode-label chart-mode-label-${side}" text-anchor="middle">${escapeHtml(label)}</text>`
+    );
+  };
+
+  const tickMarks = ticks.map((v) => {
+    const x = xPos(v);
+    return (
+      `<line x1="${x.toFixed(2)}" y1="${h - 28}" x2="${x.toFixed(2)}" y2="${h - 24}" class="chart-axis"/>` +
+      `<text x="${x.toFixed(2)}" y="${h - 10}" class="chart-xt" text-anchor="middle">${escapeHtml(fmtNum(v))}</text>`
+    );
+  }).join('');
+
+  const hits = xs.map((x, i) => {
+    const half = pitchHalf(i);
+    const xL = xPos(x) - half;
+    const delta = aProbs[i] - bProbs[i];
+    const title = `x = ${fmtNum(x)}\nA = ${aProbs[i].toFixed(4)}\nB = ${bProbs[i].toFixed(4)}\nΔ = ${delta.toFixed(4)}`;
+    return (
+      `<rect x="${xL.toFixed(2)}" y="${(midY - halfH).toFixed(2)}" width="${(half * 2).toFixed(2)}" height="${(halfH * 2).toFixed(2)}" fill="transparent" class="chart-hover">` +
+      `<title>${escapeHtml(title)}</title>` +
+      `</rect>`
+    );
+  }).join('');
+
+  return (
+    tickMarks +
+    `<path d="${buildArea(aProbs, yA)}" class="chart-area chart-area-a"/>` +
+    `<path d="${buildArea(bProbs, yB)}" class="chart-area chart-area-b"/>` +
+    `<path d="${buildLine(aProbs, yA)}" class="chart-line chart-line-a"/>` +
+    `<path d="${buildLine(bProbs, yB)}" class="chart-line chart-line-b"/>` +
+    renderMode(modeA, aProbs, yA, 'a') +
+    renderMode(modeB, bProbs, yB, 'b') +
+    hits
+  );
+}
+
+interface CategoricalBarsArgs {
+  support: string[]; aProbs: number[]; bProbs: number[]; maxP: number;
+  padL: number; innerW: number; midY: number; halfH: number; h: number;
+}
+
+function renderCategoricalBars(args: CategoricalBarsArgs): string {
+  const { support, aProbs, bProbs, maxP, padL, innerW, midY, halfH, h } = args;
+  const colW = innerW / Math.max(1, support.length);
+  const barW = Math.max(4, Math.min(40, colW * 0.72));
+  const showValueLabels = barW >= 28;
+  const xLabelStride = Math.max(1, Math.ceil(40 / colW));
+
+  return support.map((s, i) => {
+    const x = padL + i * colW + (colW - barW) / 2;
+    const ha = (aProbs[i] / maxP) * halfH;
+    const hb = (bProbs[i] / maxP) * halfH;
+    const sEsc = escapeHtml(s);
+    const showXLabel = i % xLabelStride === 0;
+    const labelsBlock = showValueLabels
+      ? (aProbs[i] > 0.005 ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY - ha - 4).toFixed(2)}" class="chart-val chart-val-a" text-anchor="middle">${aProbs[i].toFixed(2)}</text>` : '') +
+        (bProbs[i] > 0.005 ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY + hb + 12).toFixed(2)}" class="chart-val chart-val-b" text-anchor="middle">${bProbs[i].toFixed(2)}</text>` : '')
+      : '';
+    const xLabel = showXLabel
+      ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(h - 8).toFixed(2)}" class="chart-xt" text-anchor="middle">${sEsc}</text>`
+      : '';
+    const tipTitle = `${s}\nA = ${aProbs[i].toFixed(3)}\nB = ${bProbs[i].toFixed(3)}`;
+    return (
+      `<g>` +
+      `<rect x="${x.toFixed(2)}" y="${(midY - ha).toFixed(2)}" width="${barW.toFixed(2)}" height="${ha.toFixed(2)}" class="chart-bar chart-bar-a"><title>${escapeHtml(tipTitle)}</title></rect>` +
+      `<rect x="${x.toFixed(2)}" y="${midY.toFixed(2)}" width="${barW.toFixed(2)}" height="${hb.toFixed(2)}" class="chart-bar chart-bar-b"><title>${escapeHtml(tipTitle)}</title></rect>` +
+      labelsBlock + xLabel +
+      `</g>`
+    );
+  }).join('');
 }
 
 // ─── Value / record renderers ───────────────────────────────────────────────
