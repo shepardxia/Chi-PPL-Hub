@@ -282,7 +282,7 @@ export function renderChart(opts: {
   labelB: string;
   maxBars?: number;
 }): string {
-  const { a, b, labelA, labelB, maxBars = 20 } = opts;
+  const { a, b, labelA, labelB, maxBars = 30 } = opts;
   const supportSet = new Set<string>();
   for (const s of a?.support ?? []) supportSet.add(s);
   for (const s of b?.support ?? []) supportSet.add(s);
@@ -291,10 +291,10 @@ export function renderChart(opts: {
     return '<div class="out-empty">(no distribution)</div>';
   }
 
-  // Rank support by max(a, b) probability and keep top N for readability.
   let aProbs = seriesProbs(a, support);
   let bProbs = seriesProbs(b, support);
   let truncated = 0;
+  // Rank support by max(a, b) probability and keep top N for readability.
   if (support.length > maxBars) {
     const ranked = support.map((s, i) => ({ s, p: Math.max(aProbs[i], bProbs[i]) }))
       .sort((x, y) => y.p - x.p)
@@ -304,6 +304,15 @@ export function renderChart(opts: {
     support = ranked;
     aProbs = seriesProbs(a, support);
     bProbs = seriesProbs(b, support);
+  }
+  // Order: numeric values → sorted by value (x-axis is monotonic);
+  // otherwise → keep current order (already prob-sorted for categorical).
+  const numericValues = support.map((s) => Number(s));
+  if (numericValues.every((v) => Number.isFinite(v))) {
+    const idx = support.map((_, i) => i).sort((x, y) => numericValues[x] - numericValues[y]);
+    support = idx.map((i) => support[i]);
+    aProbs = idx.map((i) => aProbs[i]);
+    bProbs = idx.map((i) => bProbs[i]);
   }
   const maxP = Math.max(0.01, ...aProbs, ...bProbs);
 

@@ -711,7 +711,7 @@
     });
   }
   function renderChart({ a, b, labelA, labelB, maxBars }) {
-    const maxN = maxBars || 20;
+    const maxN = maxBars || 30;
     const supportSet = new Set();
     for (const s of a?.support || []) supportSet.add(s);
     for (const s of b?.support || []) supportSet.add(s);
@@ -727,6 +727,14 @@
       support = ranked;
       aProbs = seriesProbs(a, support);
       bProbs = seriesProbs(b, support);
+    }
+    // Numeric support → sort by value so bars are in x-order.
+    const nums = support.map((s) => Number(s));
+    if (nums.every((v) => Number.isFinite(v))) {
+      const idx = support.map((_, i) => i).sort((x, y) => nums[x] - nums[y]);
+      support = idx.map((i) => support[i]);
+      aProbs = idx.map((i) => aProbs[i]);
+      bProbs = idx.map((i) => bProbs[i]);
     }
     const maxP = Math.max(0.01, ...aProbs, ...bProbs);
     const w = 640, h = 240;
