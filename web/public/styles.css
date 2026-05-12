@@ -681,6 +681,7 @@ button { font-family: inherit; }
 }
 .chart-legend-a .chart-legend-swatch { background: var(--chart-a); }
 .chart-legend-b .chart-legend-swatch { background: var(--chart-b); }
+.chart-trunc { color: var(--fg-faint); font-style: italic; margin-left: 4px; }
 .chart-svg { width: 100%; height: auto; display: block; }
 .chart-grid { stroke: var(--border); stroke-dasharray: 2 3; stroke-width: 1; }
 .chart-axis { stroke: var(--border-strong); stroke-width: 1; }

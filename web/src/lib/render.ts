@@ -280,21 +280,35 @@ export function renderChart(opts: {
   b: ChartSeries | null;
   labelA: string;
   labelB: string;
+  maxBars?: number;
 }): string {
-  const { a, b, labelA, labelB } = opts;
+  const { a, b, labelA, labelB, maxBars = 20 } = opts;
   const supportSet = new Set<string>();
   for (const s of a?.support ?? []) supportSet.add(s);
   for (const s of b?.support ?? []) supportSet.add(s);
-  const support = Array.from(supportSet);
+  let support = Array.from(supportSet);
   if (support.length === 0) {
     return '<div class="out-empty">(no distribution)</div>';
   }
-  const aProbs = seriesProbs(a, support);
-  const bProbs = seriesProbs(b, support);
+
+  // Rank support by max(a, b) probability and keep top N for readability.
+  let aProbs = seriesProbs(a, support);
+  let bProbs = seriesProbs(b, support);
+  let truncated = 0;
+  if (support.length > maxBars) {
+    const ranked = support.map((s, i) => ({ s, p: Math.max(aProbs[i], bProbs[i]) }))
+      .sort((x, y) => y.p - x.p)
+      .slice(0, maxBars)
+      .map(({ s }) => s);
+    truncated = support.length - ranked.length;
+    support = ranked;
+    aProbs = seriesProbs(a, support);
+    bProbs = seriesProbs(b, support);
+  }
   const maxP = Math.max(0.01, ...aProbs, ...bProbs);
 
   const w = 640, h = 240;
-  const padL = 36, padR = 16, padT = 18, padB = 28;
+  const padL = 40, padR = 16, padT = 18, padB = 28;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const midY = padT + innerH / 2;
@@ -302,6 +316,7 @@ export function renderChart(opts: {
   const colW = innerW / Math.max(1, support.length);
   const barW = Math.max(8, Math.min(40, colW * 0.7));
   const ticks = [0, maxP / 2, maxP];
+  const fmtY = (v: number) => v === 0 ? '0' : maxP >= 0.1 ? v.toFixed(2) : maxP >= 0.01 ? v.toFixed(3) : v.toExponential(1);
 
   const gridLines: string[] = [];
   for (let i = 0; i < ticks.length; i++) {
@@ -310,40 +325,59 @@ export function renderChart(opts: {
     const yB = midY + (t / maxP) * halfH;
     gridLines.push(
       `<line x1="${padL}" y1="${yA}" x2="${w - padR}" y2="${yA}" class="chart-grid"/>` +
-      `<text x="${padL - 6}" y="${yA}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${t.toFixed(2)}</text>`
+      `<text x="${padL - 6}" y="${yA}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${fmtY(t)}</text>`
     );
     if (i > 0) {
       gridLines.push(
         `<line x1="${padL}" y1="${yB}" x2="${w - padR}" y2="${yB}" class="chart-grid"/>` +
-        `<text x="${padL - 6}" y="${yB}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${t.toFixed(2)}</text>`
+        `<text x="${padL - 6}" y="${yB}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${fmtY(t)}</text>`
       );
     }
   }
   const midAxis = `<line x1="${padL}" y1="${midY}" x2="${w - padR}" y2="${midY}" class="chart-axis"/>`;
 
+  // Decide x-label step so we don't overprint when there are many bars.
+  // Min char-width ~6.5px for 10px mono; allow up to 8 chars per label.
+  const maxChars = Math.max(2, Math.min(8, Math.floor(colW / 7)));
+  const xLabelStep = support.length > 24 ? 4 : support.length > 16 ? 2 : 1;
+  const truncLabel = (s: string) => s.length > maxChars ? s.slice(0, Math.max(1, maxChars - 1)) + '…' : s;
+
+  const fmtBar = (p: number) => {
+    if (p < 0.005) return '';
+    if (maxP >= 0.1) return p.toFixed(2);
+    if (maxP >= 0.01) return p.toFixed(3);
+    return p.toExponential(1);
+  };
+
   const bars = support.map((s, i) => {
     const x = padL + i * colW + (colW - barW) / 2;
     const ha = (aProbs[i] / maxP) * halfH;
     const hb = (bProbs[i] / maxP) * halfH;
-    const aLabel = aProbs[i] > 0.005 ? aProbs[i].toFixed(2) : '';
-    const bLabel = bProbs[i] > 0.005 ? bProbs[i].toFixed(2) : '';
-    const sEsc = escapeHtml(s);
+    const aLabel = fmtBar(aProbs[i]);
+    const bLabel = fmtBar(bProbs[i]);
+    const sEsc = escapeHtml(truncLabel(s));
+    const showLabel = (i % xLabelStep === 0);
     return (
       `<g>` +
-      `<rect x="${x.toFixed(2)}" y="${(midY - ha).toFixed(2)}" width="${barW.toFixed(2)}" height="${ha.toFixed(2)}" class="chart-bar chart-bar-a"/>` +
-      `<rect x="${x.toFixed(2)}" y="${midY.toFixed(2)}" width="${barW.toFixed(2)}" height="${hb.toFixed(2)}" class="chart-bar chart-bar-b"/>` +
-      `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY - ha - 4).toFixed(2)}" class="chart-val chart-val-a" text-anchor="middle">${aLabel}</text>` +
-      `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY + hb + 12).toFixed(2)}" class="chart-val chart-val-b" text-anchor="middle">${bLabel}</text>` +
-      `<text x="${(x + barW / 2).toFixed(2)}" y="${(h - 8).toFixed(2)}" class="chart-xt" text-anchor="middle">${sEsc}</text>` +
+      `<rect x="${x.toFixed(2)}" y="${(midY - ha).toFixed(2)}" width="${barW.toFixed(2)}" height="${ha.toFixed(2)}" class="chart-bar chart-bar-a"><title>${escapeHtml(s)}: A=${aProbs[i].toFixed(3)}, B=${bProbs[i].toFixed(3)}</title></rect>` +
+      `<rect x="${x.toFixed(2)}" y="${midY.toFixed(2)}" width="${barW.toFixed(2)}" height="${hb.toFixed(2)}" class="chart-bar chart-bar-b"><title>${escapeHtml(s)}: A=${aProbs[i].toFixed(3)}, B=${bProbs[i].toFixed(3)}</title></rect>` +
+      (aLabel ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY - ha - 4).toFixed(2)}" class="chart-val chart-val-a" text-anchor="middle">${aLabel}</text>` : '') +
+      (bLabel ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(midY + hb + 12).toFixed(2)}" class="chart-val chart-val-b" text-anchor="middle">${bLabel}</text>` : '') +
+      (showLabel ? `<text x="${(x + barW / 2).toFixed(2)}" y="${(h - 8).toFixed(2)}" class="chart-xt" text-anchor="middle">${sEsc}</text>` : '') +
       `</g>`
     );
   }).join('');
+
+  const truncatedNote = truncated > 0
+    ? ` <span class="chart-trunc">· top ${support.length} of ${support.length + truncated}</span>`
+    : '';
 
   return (
     `<div class="chart">` +
     `<div class="chart-legend">` +
     `<span class="chart-legend-item chart-legend-a"><span class="chart-legend-swatch"></span> ${escapeHtml(labelA)}</span>` +
     `<span class="chart-legend-item chart-legend-b"><span class="chart-legend-swatch"></span> ${escapeHtml(labelB)}</span>` +
+    truncatedNote +
     `</div>` +
     `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img" aria-label="distribution overlay">` +
     gridLines.join('') + midAxis + bars +

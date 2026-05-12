@@ -710,17 +710,27 @@
       return (s.probs || [])[idx] || 0;
     });
   }
-  function renderChart({ a, b, labelA, labelB }) {
+  function renderChart({ a, b, labelA, labelB, maxBars }) {
+    const maxN = maxBars || 20;
     const supportSet = new Set();
     for (const s of a?.support || []) supportSet.add(s);
     for (const s of b?.support || []) supportSet.add(s);
-    const support = Array.from(supportSet);
+    let support = Array.from(supportSet);
     if (!support.length) return '<div class="out-empty">(no distribution)</div>';
-    const aProbs = seriesProbs(a, support);
-    const bProbs = seriesProbs(b, support);
+    let aProbs = seriesProbs(a, support);
+    let bProbs = seriesProbs(b, support);
+    let truncated = 0;
+    if (support.length > maxN) {
+      const ranked = support.map((s, i) => ({ s, p: Math.max(aProbs[i], bProbs[i]) }))
+        .sort((x, y) => y.p - x.p).slice(0, maxN).map(({ s }) => s);
+      truncated = support.length - ranked.length;
+      support = ranked;
+      aProbs = seriesProbs(a, support);
+      bProbs = seriesProbs(b, support);
+    }
     const maxP = Math.max(0.01, ...aProbs, ...bProbs);
     const w = 640, h = 240;
-    const padL = 36, padR = 16, padT = 18, padB = 28;
+    const padL = 40, padR = 16, padT = 18, padB = 28;
     const innerW = w - padL - padR;
     const innerH = h - padT - padB;
     const midY = padT + innerH / 2;
@@ -728,16 +738,21 @@
     const colW = innerW / Math.max(1, support.length);
     const barW = Math.max(8, Math.min(40, colW * 0.7));
     const ticks = [0, maxP / 2, maxP];
+    const fmtY = (v) => v === 0 ? '0' : maxP >= 0.1 ? v.toFixed(2) : maxP >= 0.01 ? v.toFixed(3) : v.toExponential(1);
+    const fmtBar = (p) => p < 0.005 ? '' : maxP >= 0.1 ? p.toFixed(2) : maxP >= 0.01 ? p.toFixed(3) : p.toExponential(1);
+    const maxChars = Math.max(2, Math.min(8, Math.floor(colW / 7)));
+    const xLabelStep = support.length > 24 ? 4 : support.length > 16 ? 2 : 1;
+    const truncLabel = (s) => s.length > maxChars ? s.slice(0, Math.max(1, maxChars - 1)) + '…' : s;
     let grid = '';
     for (let i = 0; i < ticks.length; i++) {
       const t = ticks[i];
       const yA = midY - (t / maxP) * halfH;
       const yB = midY + (t / maxP) * halfH;
       grid += `<line x1="${padL}" y1="${yA}" x2="${w - padR}" y2="${yA}" class="chart-grid"/>`;
-      grid += `<text x="${padL - 6}" y="${yA}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${t.toFixed(2)}</text>`;
+      grid += `<text x="${padL - 6}" y="${yA}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${fmtY(t)}</text>`;
       if (i > 0) {
         grid += `<line x1="${padL}" y1="${yB}" x2="${w - padR}" y2="${yB}" class="chart-grid"/>`;
-        grid += `<text x="${padL - 6}" y="${yB}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${t.toFixed(2)}</text>`;
+        grid += `<text x="${padL - 6}" y="${yB}" class="chart-yt" text-anchor="end" dominant-baseline="middle">${fmtY(t)}</text>`;
       }
     }
     const mid = `<line x1="${padL}" y1="${midY}" x2="${w - padR}" y2="${midY}" class="chart-axis"/>`;
@@ -747,20 +762,23 @@
       const x = padL + i * colW + (colW - barW) / 2;
       const ha = (aProbs[i] / maxP) * halfH;
       const hb = (bProbs[i] / maxP) * halfH;
-      const aLab = aProbs[i] > 0.005 ? aProbs[i].toFixed(2) : '';
-      const bLab = bProbs[i] > 0.005 ? bProbs[i].toFixed(2) : '';
+      const aLab = fmtBar(aProbs[i]);
+      const bLab = fmtBar(bProbs[i]);
+      const showLabel = (i % xLabelStep === 0);
       bars += `<g>` +
-        `<rect x="${x.toFixed(2)}" y="${(midY - ha).toFixed(2)}" width="${barW.toFixed(2)}" height="${ha.toFixed(2)}" class="chart-bar chart-bar-a"/>` +
-        `<rect x="${x.toFixed(2)}" y="${midY.toFixed(2)}" width="${barW.toFixed(2)}" height="${hb.toFixed(2)}" class="chart-bar chart-bar-b"/>` +
-        `<text x="${(x + barW/2).toFixed(2)}" y="${(midY - ha - 4).toFixed(2)}" class="chart-val chart-val-a" text-anchor="middle">${aLab}</text>` +
-        `<text x="${(x + barW/2).toFixed(2)}" y="${(midY + hb + 12).toFixed(2)}" class="chart-val chart-val-b" text-anchor="middle">${bLab}</text>` +
-        `<text x="${(x + barW/2).toFixed(2)}" y="${(h - 8).toFixed(2)}" class="chart-xt" text-anchor="middle">${escapeHtml(String(s))}</text>` +
+        `<rect x="${x.toFixed(2)}" y="${(midY - ha).toFixed(2)}" width="${barW.toFixed(2)}" height="${ha.toFixed(2)}" class="chart-bar chart-bar-a"><title>${escapeHtml(String(s))}: A=${aProbs[i].toFixed(3)}, B=${bProbs[i].toFixed(3)}</title></rect>` +
+        `<rect x="${x.toFixed(2)}" y="${midY.toFixed(2)}" width="${barW.toFixed(2)}" height="${hb.toFixed(2)}" class="chart-bar chart-bar-b"><title>${escapeHtml(String(s))}: A=${aProbs[i].toFixed(3)}, B=${bProbs[i].toFixed(3)}</title></rect>` +
+        (aLab ? `<text x="${(x + barW/2).toFixed(2)}" y="${(midY - ha - 4).toFixed(2)}" class="chart-val chart-val-a" text-anchor="middle">${aLab}</text>` : '') +
+        (bLab ? `<text x="${(x + barW/2).toFixed(2)}" y="${(midY + hb + 12).toFixed(2)}" class="chart-val chart-val-b" text-anchor="middle">${bLab}</text>` : '') +
+        (showLabel ? `<text x="${(x + barW/2).toFixed(2)}" y="${(h - 8).toFixed(2)}" class="chart-xt" text-anchor="middle">${escapeHtml(truncLabel(String(s)))}</text>` : '') +
       `</g>`;
     }
+    const truncatedNote = truncated > 0 ? ` <span class="chart-trunc">· top ${support.length} of ${support.length + truncated}</span>` : '';
     return `<div class="chart">` +
       `<div class="chart-legend">` +
         `<span class="chart-legend-item chart-legend-a"><span class="chart-legend-swatch"></span> ${escapeHtml(labelA)}</span>` +
         `<span class="chart-legend-item chart-legend-b"><span class="chart-legend-swatch"></span> ${escapeHtml(labelB)}</span>` +
+        truncatedNote +
       `</div>` +
       `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img" aria-label="distribution overlay">` +
         grid + mid + bars +
