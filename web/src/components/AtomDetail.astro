@@ -107,19 +107,19 @@ const sourcesData = Object.fromEntries(
     <div class="atom-head-row">
       <span class="atom-id">{atom.id}</span>
       <span class="atom-tags">
-        <span class="badge shape" title={`Answer shape: ${shapeStr} — drives which metrics are computed.`}>{shapeStr}</span>
+        <span class="badge shape" data-tip={`Answer shape: ${shapeStr}\nDrives which metrics are computed.`}>{shapeStr}</span>
         {metric && (
-          <span class="badge numeric" title="Worst TV distance among this atom's sub-metrics, on the primary run.">{metric}</span>
+          <span class="badge numeric" data-tip="Worst TV distance among this atom's sub-metrics, on the primary run.">{metric}</span>
         )}
         <span
           class={`badge bucket-${tone}`}
-          title={`Bucket: ${bucket} — ${bucketDesc} (primary run)`}
+          data-tip={`Bucket ${bucket}: ${bucketDesc}\n(primary run)`}
         >
           <span class="glyph">{glyph}</span>
           {bucket}
         </span>
         {runs.length > 0 && (
-          <span class="badge numeric" title={`${runs.length} LM run configuration${runs.length === 1 ? '' : 's'} scored this atom.`}>{runs.length} runs</span>
+          <span class="badge numeric" data-tip={`${runs.length} LM run configuration${runs.length === 1 ? '' : 's'} scored this atom.\nClick a run chip below or use the dropdowns to compare.`}>{runs.length} runs</span>
         )}
       </span>
     </div>
@@ -130,7 +130,7 @@ const sourcesData = Object.fromEntries(
           const rt = toneFor(rb);
           const rg = glyphFor(rb);
           return (
-            <span class={`run-tab tone-${rt}`} title={`${runName}: ${rb}`} data-run={runName}>
+            <span class={`run-tab tone-${rt}`} data-tip={`${runName}\nbucket: ${rb} — ${descFor(rb)}\nclick to set right pane`} data-run={runName}>
               <span class="rt-glyph">{rg}</span>
               {runName}
             </span>

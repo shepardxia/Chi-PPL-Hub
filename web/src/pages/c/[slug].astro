@@ -115,7 +115,7 @@ const firstAtomId = data.atoms[0]?.id ?? '';
         <input id="search" class="rail-search" type="search" placeholder="Search id, source, prompt…" />
         <div class="bucket-pills">
           <div class="legend">
-            <button type="button" id="legend-toggle" class="legend-trigger" aria-label="Bucket legend" title="What do the buckets mean?">?</button>
+            <button type="button" id="legend-toggle" class="legend-trigger" aria-label="Bucket legend" data-tip="What do the buckets mean?" data-tip-place="below">?</button>
             <div class="legend-panel" id="legend-panel" hidden>
               <h3>Buckets (primary run)</h3>
               {BUCKETS.filter((b) => (bucketCounts[b.label] ?? 0) > 0).map((b) => (
@@ -132,7 +132,8 @@ const firstAtomId = data.atoms[0]?.id ?? '';
               type="button"
               class={`pill tone-${b.tone}`}
               data-bk={b.label}
-              title={b.desc}
+              data-tip={`${b.label}: ${b.desc}\nclick to filter`}
+              data-tip-place="below"
             >
               <span class="pill-glyph">{b.glyph}</span>
               <span>{b.label}</span>
@@ -156,9 +157,10 @@ const firstAtomId = data.atoms[0]?.id ?? '';
                 data-bk={it.bucket}
                 data-search={it.search}
                 data-group={grp.key}
-                title={it.atom.id}
+                data-tip={`${it.atom.id}\n${it.bucket}${it.metric ? ' · ' + it.metric : ''}`}
+                data-tip-place="below"
               >
-                <span class={`item-dot ${it.tone}`} title={it.bucket}>{it.glyph}</span>
+                <span class={`item-dot ${it.tone}`}>{it.glyph}</span>
                 <span class="item-main">{it.shortLabel}</span>
                 <span class="item-metric">{it.metric}</span>
               </div>
