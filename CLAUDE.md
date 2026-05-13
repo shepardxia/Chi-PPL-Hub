@@ -77,6 +77,7 @@ WebPPL packages in `eval/deps/` are loaded via `--require` for every run:
 - `probmods-deps`, `probmods-draw`, `probmods-physics`, `probmods-towdata`, `probmods-seeded-random`, `probmods-viz-stub`.
 - `probmods-viz-stub/header.js` is the shim that makes `viz(...)`, `viz.<method>(...)`, `drawLines`, `print`, etc. into headless no-ops. **Bare-identifier calls (`viz(x)`) get CPS-transformed by WebPPL — they need `function(s,k,a,...args)` returning `k(s,...)`. Member calls (`viz.bar(x)`) stay plain JS.** Mix this up and the program halts silently with no error.
 - WebPPL forbids field assignment on top-level vars (`viz.table = ...` errors). All shims must be exposed via package headers, not in-program.
+- **`scored.jsonl` retains the run's output.** `eval/harness.py` keeps `evaluation.gen.answer` (the executed answer object, not the code) in each per-atom record. The web app's overlay chart depends on this; stripping it (as the original harness did) breaks the dual-source histogram.
 
 ## Atom curation
 
@@ -109,7 +110,9 @@ npm run db:migrate:remote       # apply migrations to remote D1 (production!)
 
 - Build runs with **CWD = `web/`**. `src/lib/atoms.ts` resolves `process.cwd() + '..'` to find the dataset; do not change to `import.meta.url`-based resolution (vite bundles the file into `dist/_worker.js/chunks/` and the relative path breaks).
 - The site reads `data/atomized_v2.jsonl`, `data/curated_v3/*.jsonl`, and `data/eval_runs/*/scored.jsonl` at build time. Adding a new collection = drop a JSONL into `data/`, append one entry to `COLLECTIONS` in `src/lib/atoms.ts`, push.
-- Bucket naming (`'TV=0'`, `'val+'`, `'shape!'`, etc.) and tone mapping are shared logic with `scripts/render_atoms_html.py`; `web/src/lib/buckets.ts` is the TypeScript port. Keep the labels in sync if you change one.
+- **Bucket labels** (`'TV=0'`, `'val+'`, `'shape!'`, etc.) are shared with `scripts/render_atoms_html.py`. Keep them aligned if you add/rename. **Tone vocabulary diverged**: the web (`web/src/lib/buckets.ts`) uses `great/good/ok/poor/bad/err/na` from the Claude Design palette; the Python renderer uses `good/warn/bad/muted`. They map cleanly (great/good→good, ok/poor→warn, bad/err→bad, na→muted) but aren't class-compatible.
+- **Distribution payload preparation.** `web/src/lib/render.ts:prepareAtomOutputs` runs once per atom over `[gtOutput, ...runOutputs]` before serialization. If any source looks continuous (≥16 distinct, mostly numeric, mostly non-integer, OR >64 distinct integers) it bins ALL sources to ~24 shared bins from the union range so the chart can overlay comparably. Otherwise it truncates each to top-48 by probability. Atoms shipping with exactly 24-bin or 48-cap support are coming from one of those paths.
+- **Chart has two render modes.** `renderChart` (server-side in `render.ts`) + the client mirror in `web/public/browse.js` both pick `numeric && support.length >= 14` → area-curve mode (filled stepped area + outline + mode markers + nice-x-ticks); otherwise → categorical bars. Keep both implementations in sync; the client one re-runs on source-pane swap.
 - **Prompt text** (system base + WebPPL primer) lives canonically at `data/prompts/{system_base,webppl_primer}.txt`. `eval/prompt.py` reads them at import via `Path.read_text()`; `web/src/lib/prompts.ts` uses Vite `?raw` imports so the text is inlined at build time (no Node fs at runtime). Edit the .txt files only — never inline the text in either reader.
 - `dist/.assetsignore` (sourced from `public/.assetsignore`) excludes `_worker.js` and `_routes.json` from the static-asset upload — without it, `wrangler deploy` refuses to upload because it would expose server code.
 - D1 binding: `env.DB` (`ppl-gym-feedback`, id in `wrangler.toml`). Schema in `migrations/0001_init.sql`. R2 binding is commented out pending `wrangler r2 bucket create ppl-gym-backups`; backups will live in a separate `ppl-gym-backup` Worker, not this one.
@@ -122,3 +125,25 @@ npm run db:migrate:remote       # apply migrations to remote D1 (production!)
 - **Subagents inherit the parent's model unless pinned.** For routine review/audit, always pass `model="sonnet"` and instructions saying "all N atoms, no sampling." See `data/REVIEW_PROCESS.md`.
 - **Don't silently drop data.** Atoms that fail assembly/exec land in `_*_broken.jsonl` with the agent's notes + executor stderr — they're for triage, not for ignoring.
 - **Don't push directly to `main` without authorization.** Earlier blanket "commit and push" approvals don't carry across to subsequent changes; ask each time.
+
+## Re-scoring all runs
+
+If you change `eval/harness.py` or `eval/executor.py` in a way that affects what lives in `scored.jsonl` (e.g. the "store gen.answer" change), re-score every config against existing generations. Generation files are NOT re-run (no LM calls); scoring just re-executes the already-recorded code:
+
+```bash
+for d in data/eval_runs/*/; do
+  name=$(basename "$d")
+  [ -f "$d/scored.jsonl" ] && cp "$d/scored.jsonl" "$d/scored.jsonl.pre-output-bak"  # gitignored
+  PYTHONPATH=. .venv/bin/python -m eval.score \
+    --dataset data/atomized_v2.jsonl \
+    --generations "$d/generations.jsonl" \
+    --output "$d/scored.jsonl" \
+    > "$d/score.log" 2>&1
+done
+```
+
+~15–25 min for 8 configs × 76 atoms; bottleneck is WebPPL spawns for `samples`-shape atoms.
+
+## Design ownership
+
+The web app's academic-theme master/detail layout, color tokens, typography, bucket glyphs, and two-mode chart come from a **Claude Design** handoff (claude.ai/design). The prototype source (`PPL Gym.html`, `app.jsx`, `shell.jsx`, `styles.css`, `data.js`) isn't in this repo — they're design references whose final form is what `web/` implements. If a design change is needed, pull a new handoff bundle and re-implement from it; don't try to redesign from first principles inside Claude Code.
