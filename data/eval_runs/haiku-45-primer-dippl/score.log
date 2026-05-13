@@ -1,0 +1,28 @@
+[1/17] dippl-02-webppl/atom-1                                  executed=True, metrics={'exact': 0.0, 'approx': 0.0}
+[2/17] dippl-02-webppl/atom-2                                  executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[3/17] dippl-02-webppl/atom-3                                  executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[4/17] dippl-03-enumeration/atom-1                             executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[5/17] dippl-03-enumeration/atom-2                             executed=True, metrics={'exact': 0.0, 'approx': 0.0}
+[6/17] dippl-03-enumeration/atom-3                             executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[7/17] dippl-04-factorseq/atom-1                               executed=False, metrics={}
+[8/17] dippl-04-factorseq/atom-2                               executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[9/17] dippl-04-factorseq/atom-3                               executed=True, metrics={'kl': 0.00513379351761814, 'tv': 0.029444100340662718}
+[10/17] dippl-04-factorseq/atom-4                               executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[11/17] dippl-04-factorseq/atom-5                               executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[12/17] dippl-05-particlefilter/atom-1                          executed=True, metrics={'kl': 0.0649767635570969, 'tv': 0.04753849980670099}
+[13/17] dippl-05-particlefilter/atom-2                          executed=True, metrics={'tv': 1.0}
+[14/17] dippl-05-particlefilter/atom-3                          executed=True, metrics={'tv': 1.0}
+[15/17] dippl-05-particlefilter/atom-4                          executed=True, metrics={'tv': 1.0}
+[16/17] dippl-06-mcmc/atom-1                                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[17/17] dippl-06-mcmc/atom-2                                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+
+============================================================
+SCORING DONE
+============================================================
+  Atoms:           17
+  Executed:        16 (94.1%)
+  Parse failures:  0
+  Mean KL:         0.0088 (n=8)
+  Mean TV:         0.2797 (n=11)
+  Mean value-exact: 60.00% (n=5)
+  Wall clock:      60.9s

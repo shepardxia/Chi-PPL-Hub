@@ -17,10 +17,10 @@ export const COLLECTIONS: Collection[] = [
   },
   {
     slug: 'curated-v3-dippl',
-    label: 'dippl (v3)',
+    label: 'DIPPL exercises',
     jsonlPath: 'data/curated_v3/dippl.jsonl',
-    primaryRun: 'sonnet-46-primer-v3',
-    description: 'Curated v3 — dippl pilot (M-to-N chunking).',
+    primaryRun: 'sonnet-46-primer-dippl',
+    description: 'Hand-curated WebPPL exercises from dippl.org (17 atoms) — v3 pilot using the M-to-N chunking flow.',
   },
 ];
 

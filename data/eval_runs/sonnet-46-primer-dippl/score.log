@@ -1,0 +1,28 @@
+[1/17] dippl-02-webppl/atom-1                                  executed=True, metrics={'exact': 0.0, 'approx': 0.0}
+[2/17] dippl-02-webppl/atom-2                                  executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[3/17] dippl-02-webppl/atom-3                                  executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[4/17] dippl-03-enumeration/atom-1                             executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[5/17] dippl-03-enumeration/atom-2                             executed=True, metrics={'exact': 0.0, 'approx': 0.0}
+[6/17] dippl-03-enumeration/atom-3                             executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[7/17] dippl-04-factorseq/atom-1                               executed=True, metrics={'kl': 22.440260733925165, 'tv': 0.9999999999999999}
+[8/17] dippl-04-factorseq/atom-2                               executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[9/17] dippl-04-factorseq/atom-3                               executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[10/17] dippl-04-factorseq/atom-4                               executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[11/17] dippl-04-factorseq/atom-5                               executed=True, metrics={'exact': 1.0, 'approx': 1.0}
+[12/17] dippl-05-particlefilter/atom-1                          executed=True, metrics={'kl': 6.848527575841744e-17, 'tv': 1.1453410106183198e-16}
+[13/17] dippl-05-particlefilter/atom-2                          executed=True, metrics={'tv': 1.0}
+[14/17] dippl-05-particlefilter/atom-3                          executed=True, metrics={'tv': 0.9999999999999999}
+[15/17] dippl-05-particlefilter/atom-4                          executed=True, metrics={'tv': 1.0}
+[16/17] dippl-06-mcmc/atom-1                                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+[17/17] dippl-06-mcmc/atom-2                                    executed=True, metrics={'kl': 0.0, 'tv': 0.0}
+
+============================================================
+SCORING DONE
+============================================================
+  Atoms:           17
+  Executed:        17 (100.0%)
+  Parse failures:  0
+  Mean KL:         2.4934 (n=9)
+  Mean TV:         0.3333 (n=12)
+  Mean value-exact: 60.00% (n=5)
+  Wall clock:      3.9s
