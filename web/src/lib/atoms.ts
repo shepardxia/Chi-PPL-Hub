@@ -10,10 +10,10 @@ const RUNS_DIR = join(DATA_DIR, 'eval_runs');
 export const COLLECTIONS: Collection[] = [
   {
     slug: 'atomized-v2',
-    label: 'exercises (v2)',
+    label: 'ProbMods2 exercises',
     jsonlPath: 'data/atomized_v2.jsonl',
     primaryRun: 'sonnet-46-primer-v3',
-    description: 'Hand-curated WebPPL exercises (76 atoms) — the canonical v2 dataset.',
+    description: 'Hand-curated WebPPL exercises from probmods.org (76 atoms) — the canonical v2 dataset.',
   },
   {
     slug: 'curated-v3-dippl',
